@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Стенд моделирования помех</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 p-8">
+    <h1 class="text-3xl font-bold mb-6 text-blue-400">📡 Network Impairment Emulator</h1>
+
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-gray-800 p-4 rounded shadow">
+            <h3 class="text-gray-400">Принято</h3>
+            <p id="stat-recv" class="text-2xl font-bold text-green-400">0</p>
+        </div>
+        <div class="bg-gray-800 p-4 rounded shadow">
+            <h3 class="text-gray-400">Передано</h3>
+            <p id="stat-fwd" class="text-2xl font-bold text-blue-400">0</p>
+        </div>
+        <div class="bg-gray-800 p-4 rounded shadow">
+            <h3 class="text-gray-400">Потеряно</h3>
+            <p id="stat-drop" class="text-2xl font-bold text-red-400">0</p>
+        </div>
+        <div class="bg-gray-800 p-4 rounded shadow">
+            <h3 class="text-gray-400">Ср. задержка (мс)</h3>
+            <p id="stat-delay" class="text-2xl font-bold text-yellow-400">0.0</p>
+        </div>
+    </div>
+
+    <div class="bg-gray-800 p-6 rounded shadow mb-8">
+        <h2 class="text-xl font-bold mb-4">Управление движком</h2>
+        <div class="flex gap-4 items-end">
+            <div>
+                <label class="block text-sm">NIC-IN</label>
+                <input id="nic-in" type="text" value="veth-in" class="bg-gray-700 p-2 rounded w-32">
+            </div>
+            <div>
+                <label class="block text-sm">NIC-OUT</label>
+                <input id="nic-out" type="text" value="veth-out" class="bg-gray-700 p-2 rounded w-32">
+            </div>
+            <button onclick="startEngine()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded">Запустить</button>
+            <button onclick="stopEngine()" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded">Остановить</button>
+            <span id="engine-status" class="text-sm text-gray-400 ml-4">Статус: Остановлен</span>
+        </div>
+    </div>
+
+    <div class="bg-gray-800 p-6 rounded shadow">
+        <h2 class="text-xl font-bold mb-4">Создать профиль помех</h2>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+            <input id="p-name" type="text" placeholder="Имя" class="bg-gray-700 p-2 rounded">
+            <input id="p-delay" type="number" placeholder="Задержка (мс)" class="bg-gray-700 p-2 rounded">
+            <input id="p-loss" type="number" placeholder="Потери (%)" class="bg-gray-700 p-2 rounded">
+            <input id="p-jitter" type="number" placeholder="Джиттер (мс)" class="bg-gray-700 p-2 rounded">
+            <input id="p-dup" type="number" placeholder="Дубликат (%)" class="bg-gray-700 p-2 rounded">
+        </div>
+        <button onclick="createProfile()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">Сохранить профиль</button>
+
+        <h3 class="mt-6 mb-2 font-bold">Активные профили:</h3>
+        <ul id="profiles-list" class="list-disc pl-5 text-gray-300"></ul>
+    </div>
+
+    <script>
+        // WebSocket для получения статистики в реальном времени
+        const ws = new WebSocket(`ws://${window.location.host}/ws/stats`);
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            document.getElementById('stat-recv').innerText = data.stats.received;
+            document.getElementById('stat-fwd').innerText = data.stats.forwarded;
+            document.getElementById('stat-drop').innerText = data.stats.dropped;
+            document.getElementById('stat-delay').innerText = data.stats.avg_delay.toFixed(2);
+
+            const statusEl = document.getElementById('engine-status');
+            if (data.engine_running) {
+                statusEl.innerText = `Статус: ✅ Работает (${data.nic_in} -> ${data.nic_out})`;
+                statusEl.className = "text-sm text-green-400 ml-4 font-bold";
+            } else {
+                statusEl.innerText = "Статус: ⛔ Остановлен";
+                statusEl.className = "text-sm text-red-400 ml-4 font-bold";
+            }
+        };
+
+        async function startEngine() {
+            const inNic = document.getElementById('nic-in').value;
+            const outNic = document.getElementById('nic-out').value;
+            await fetch(`/api/engine/start?nic_in=${inNic}&nic_out=${outNic}`, {method: 'POST'});
+        }
+
+        async function stopEngine() {
+            await fetch('/api/engine/stop', {method: 'POST'});
+        }
+
+        async function createProfile() {
+            const params = new URLSearchParams({
+                name: document.getElementById('p-name').value,
+                delay: document.getElementById('p-delay').value || 0,
+                loss: document.getElementById('p-loss').value || 0,
+                jitter: document.getElementById('p-jitter').value || 0,
+                dup: document.getElementById('p-dup').value || 0
+            });
+            await fetch(`/api/profiles?${params}`, {method: 'POST'});
+            loadProfiles();
+        }
+
+        async function loadProfiles() {
+    const res = await fetch('/api/profiles');
+    const profiles = await res.json();
+    const list = document.getElementById('profiles-list');
+    list.innerHTML = profiles.map(p =>
+        `<li class="flex items-center gap-2 mb-1">
+            <span>${p.is_active ? '🟢' : '⚪'} ${p.name} | Delay: ${p.delay_ms}ms | Loss: ${p.loss_percent}% | Jitter: ${p.jitter_ms}ms | Dup: ${p.duplication_percent}%</span>
+            ${!p.is_active ? `<button onclick="activateProfile(${p.id})" class="bg-yellow-600 hover:bg-yellow-700 px-2 py-1 rounded text-xs">Активировать</button>` : '<span class="text-green-400 text-xs">АКТИВЕН</span>'}
+        </li>`
+    ).join('');
+}
+
+async function activateProfile(id) {
+    await fetch(`/api/profiles/${id}/activate`, {method: 'POST'});
+    loadProfiles();
+}
+        loadProfiles();
+    </script>
+</body>
+</html>
