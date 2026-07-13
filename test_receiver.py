@@ -1,36 +1,71 @@
 import socket
 import time
 
-# ВАЖНО: используем 127.0.0.1 вместо 10.0.0.2
+# IP и порт, на который движок отправляет обработанные пакеты
 LISTEN_IP = "127.0.0.1"
-LISTEN_PORT = 5006  # Сюда движок будет пересылать пакеты
+LISTEN_PORT = 5006
 
-print(f"[*] Слушаю на {LISTEN_IP}:{LISTEN_PORT}")
+print(f"[*] Слушаю UDP на {LISTEN_IP}:{LISTEN_PORT}")
+print(f"[*] Ожидание пакетов...")
+print()
+
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.bind((LISTEN_IP, LISTEN_PORT))
-sock.settimeout(10.0)  # Ждём пакеты до 10 секунд
+sock.settimeout(30.0)  # Увеличенный таймаут - 30 секунд
 
 received = 0
-total_delay = 0
+total_delay = 0.0
+delays = []
 
 try:
     while True:
-        data, addr = sock.recvfrom(1024)
+        data, addr = sock.recvfrom(65535)
         received += 1
+
         try:
-            ts_str = data.decode().split('_')[-1]
+            # Извлекаем timestamp из пакета
+            decoded = data.decode('utf-8', errors='ignore')
+            parts = decoded.split('_')
+            # Формат: TEST_PACKET__timestamp_random_index
+            ts_str = parts[-3]  # timestamp
             send_time = float(ts_str)
-            delay = (time.time() - send_time) * 1000
+            delay = (time.time() - send_time) * 1000  # в мс
             total_delay += delay
-            print(f"[✓] Пакет #{received} | Задержка: {delay:.2f} мс")
+            delays.append(delay)
+
+            print(f"[✓] Пакет #{received:3d} | Задержка: {delay:7.2f} мс")
         except Exception as e:
-            print(f"[!] Пакет получен, но ошибка парсинга: {e}")
+            print(f"[!] Пакет #{received:3d} получен (не удалось извлечь timestamp: {e})")
+
 except socket.timeout:
-    print(f"\n--- РЕЗУЛЬТАТЫ ТЕСТА ---")
-    print(f"Отправлено: 100 пакетов")
-    print(f"Получено:   {received} пакетов")
-    print(f"Потеряно:   {100 - received} пакетов ({((100-received)/100)*100:.1f}%)")
+    print(f"\n{'=' * 50}")
+    print(f"РЕЗУЛЬТАТЫ ТЕСТА")
+    print(f"{'=' * 50}")
+    print(f"Отправлено:  100 пакетов")
+    print(f"Получено:    {received} пакетов")
+    print(f"Потеряно:    {100 - received} пакетов ({((100 - received) / 100) * 100:.1f}%)")
+
     if received > 0:
-        print(f"Ср. задержка: {total_delay/received:.2f} мс")
+        avg_delay = total_delay / received
+        min_delay = min(delays)
+        max_delay = max(delays)
+
+        print(f"\nСтатистика задержки:")
+        print(f"  Средняя:     {avg_delay:.2f} мс")
+        print(f"  Минимальная: {min_delay:.2f} мс")
+        print(f"  Максимальная:{max_delay:.2f} мс")
+
+        # 95-й перцентиль
+        delays.sort()
+        p95_idx = int(len(delays) * 0.95)
+        print(f"  95-й перцентиль: {delays[p95_idx]:.2f} мс")
+    else:
+        print("\n⚠️ Пакеты не получены!")
+        print("Проверьте:")
+        print("  1. Запущен ли движок в Web UI")
+        print("  2. Активирован ли профиль")
+        print("  3. Запущен ли test_sender.py")
 finally:
     sock.close()
+    print(f"\n{'=' * 50}")

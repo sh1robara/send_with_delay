@@ -2,122 +2,348 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Стенд моделирования помех</title>
+    <title>Network Impairment Emulator</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .status-active { background-color: #10b981; }
+        .status-inactive { background-color: #6b7280; }
+    </style>
 </head>
 <body class="bg-gray-900 text-gray-100 p-8">
     <h1 class="text-3xl font-bold mb-6 text-blue-400">📡 Network Impairment Emulator</h1>
 
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+    <!-- Дашборд статистики -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
         <div class="bg-gray-800 p-4 rounded shadow">
-            <h3 class="text-gray-400">Принято</h3>
+            <h3 class="text-gray-400 text-sm">Принято</h3>
             <p id="stat-recv" class="text-2xl font-bold text-green-400">0</p>
         </div>
         <div class="bg-gray-800 p-4 rounded shadow">
-            <h3 class="text-gray-400">Передано</h3>
+            <h3 class="text-gray-400 text-sm">Передано</h3>
             <p id="stat-fwd" class="text-2xl font-bold text-blue-400">0</p>
         </div>
         <div class="bg-gray-800 p-4 rounded shadow">
-            <h3 class="text-gray-400">Потеряно</h3>
+            <h3 class="text-gray-400 text-sm">Потеряно</h3>
             <p id="stat-drop" class="text-2xl font-bold text-red-400">0</p>
         </div>
         <div class="bg-gray-800 p-4 rounded shadow">
-            <h3 class="text-gray-400">Ср. задержка (мс)</h3>
+            <h3 class="text-gray-400 text-sm">Дублировано</h3>
+            <p id="stat-dup" class="text-2xl font-bold text-purple-400">0</p>
+        </div>
+        <div class="bg-gray-800 p-4 rounded shadow">
+            <h3 class="text-gray-400 text-sm">Ср. задержка (мс)</h3>
             <p id="stat-delay" class="text-2xl font-bold text-yellow-400">0.0</p>
         </div>
     </div>
 
+    <!-- Управление движком -->
     <div class="bg-gray-800 p-6 rounded shadow mb-8">
-        <h2 class="text-xl font-bold mb-4">Управление движком</h2>
-        <div class="flex gap-4 items-end">
-            <div>
-                <label class="block text-sm">NIC-IN</label>
-                <input id="nic-in" type="text" value="veth-in" class="bg-gray-700 p-2 rounded w-32">
-            </div>
-            <div>
-                <label class="block text-sm">NIC-OUT</label>
-                <input id="nic-out" type="text" value="veth-out" class="bg-gray-700 p-2 rounded w-32">
-            </div>
-            <button onclick="startEngine()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded">Запустить</button>
-            <button onclick="stopEngine()" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded">Остановить</button>
-            <span id="engine-status" class="text-sm text-gray-400 ml-4">Статус: Остановлен</span>
+        <h2 class="text-xl font-bold mb-4">⚙️ Управление движком</h2>
+        <div class="flex gap-4 items-end flex-wrap">
+            <button onclick="startEngine()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded font-semibold">
+                ▶ Запустить
+            </button>
+            <button onclick="stopEngine()" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded font-semibold">
+                ⏹ Остановить
+            </button>
+            <span id="engine-status" class="text-sm text-gray-400 ml-4">
+                <span class="status-dot status-inactive"></span>Остановлен
+            </span>
         </div>
     </div>
 
-    <div class="bg-gray-800 p-6 rounded shadow">
-        <h2 class="text-xl font-bold mb-4">Создать профиль помех</h2>
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
-            <input id="p-name" type="text" placeholder="Имя" class="bg-gray-700 p-2 rounded">
-            <input id="p-delay" type="number" placeholder="Задержка (мс)" class="bg-gray-700 p-2 rounded">
-            <input id="p-loss" type="number" placeholder="Потери (%)" class="bg-gray-700 p-2 rounded">
-            <input id="p-jitter" type="number" placeholder="Джиттер (мс)" class="bg-gray-700 p-2 rounded">
-            <input id="p-dup" type="number" placeholder="Дубликат (%)" class="bg-gray-700 p-2 rounded">
+    <!-- Активный профиль -->
+    <div class="bg-gray-800 p-6 rounded shadow mb-8">
+        <h2 class="text-xl font-bold mb-4">🎯 Активный профиль</h2>
+        <div id="active-profile-info" class="text-gray-300">
+            Профиль не выбран
         </div>
-        <button onclick="createProfile()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">Сохранить профиль</button>
+    </div>
 
-        <h3 class="mt-6 mb-2 font-bold">Активные профили:</h3>
-        <ul id="profiles-list" class="list-disc pl-5 text-gray-300"></ul>
+    <!-- Создание профиля -->
+    <div class="bg-gray-800 p-6 rounded shadow">
+        <h2 class="text-xl font-bold mb-4">➕ Создать профиль помех</h2>
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4">
+            <input id="p-name" type="text" placeholder="Имя профиля" class="bg-gray-700 p-2 rounded">
+            <input id="p-delay" type="number" placeholder="Задержка (мс)" min="0" class="bg-gray-700 p-2 rounded">
+            <input id="p-loss" type="number" placeholder="Потери (%)" min="0" max="100" class="bg-gray-700 p-2 rounded">
+            <input id="p-jitter" type="number" placeholder="Джиттер (мс)" min="0" class="bg-gray-700 p-2 rounded">
+            <input id="p-dup" type="number" placeholder="Дубликат (%)" min="0" max="100" class="bg-gray-700 p-2 rounded">
+            <input id="p-reorder" type="number" placeholder="Перестановка (%)" min="0" max="100" class="bg-gray-700 p-2 rounded">
+        </div>
+        <button onclick="createProfile()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-semibold">
+            💾 Сохранить профиль
+        </button>
+
+        <h3 class="mt-6 mb-2 font-bold">📋 Профили:</h3>
+        <ul id="profiles-list" class="list-none text-gray-300"></ul>
+    </div>
+
+    <!-- Уведомления -->
+    <div id="notification" class="fixed top-4 right-4 hidden bg-gray-800 border-l-4 p-4 rounded shadow-lg max-w-md" role="alert">
+        <p id="notification-text" class="font-bold"></p>
     </div>
 
     <script>
-        // WebSocket для получения статистики в реальном времени
-        const ws = new WebSocket(`ws://${window.location.host}/ws/stats`);
-        ws.onmessage = function(event) {
-            const data = JSON.parse(event.data);
+        // ==================== WebSocket ====================
+        let ws = null;
+        let wsReconnectTimer = null;
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/stats`);
+
+            ws.onopen = function() {
+                console.log('✅ WebSocket подключен');
+                if (wsReconnectTimer) {
+                    clearTimeout(wsReconnectTimer);
+                    wsReconnectTimer = null;
+                }
+            };
+
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    updateStats(data);
+                } catch (e) {
+                    console.error('Ошибка парсинга WebSocket:', e);
+                }
+            };
+
+            ws.onerror = function(error) {
+                console.error('❌ WebSocket ошибка:', error);
+            };
+
+            ws.onclose = function() {
+                console.log('🔌 WebSocket отключен. Переподключение через 3 сек...');
+                if (!wsReconnectTimer) {
+                    wsReconnectTimer = setTimeout(connectWebSocket, 3000);
+                }
+            };
+        }
+
+        function updateStats(data) {
             document.getElementById('stat-recv').innerText = data.stats.received;
             document.getElementById('stat-fwd').innerText = data.stats.forwarded;
             document.getElementById('stat-drop').innerText = data.stats.dropped;
-            document.getElementById('stat-delay').innerText = data.stats.avg_delay.toFixed(2);
+            document.getElementById('stat-dup').innerText = data.stats.duplicated || 0;
+            document.getElementById('stat-delay').innerText = (data.stats.avg_delay || 0).toFixed(2);
 
             const statusEl = document.getElementById('engine-status');
             if (data.engine_running) {
-                statusEl.innerText = `Статус: ✅ Работает (${data.nic_in} -> ${data.nic_out})`;
+                statusEl.innerHTML = `<span class="status-dot status-active"></span>✅ Работает`;
                 statusEl.className = "text-sm text-green-400 ml-4 font-bold";
             } else {
-                statusEl.innerText = "Статус: ⛔ Остановлен";
+                statusEl.innerHTML = `<span class="status-dot status-inactive"></span>⛔ Остановлен`;
                 statusEl.className = "text-sm text-red-400 ml-4 font-bold";
             }
-        };
+        }
 
+        // ==================== Уведомления ====================
+        function showNotification(message, type = 'info') {
+            const notif = document.getElementById('notification');
+            const text = document.getElementById('notification-text');
+
+            const colors = {
+                'success': 'border-green-500 text-green-400',
+                'error': 'border-red-500 text-red-400',
+                'info': 'border-blue-500 text-blue-400'
+            };
+
+            notif.className = `fixed top-4 right-4 ${colors[type]} bg-gray-800 border-l-4 p-4 rounded shadow-lg max-w-md`;
+            text.innerText = message;
+            notif.classList.remove('hidden');
+
+            setTimeout(() => notif.classList.add('hidden'), 3000);
+        }
+
+        // ==================== API функции ====================
         async function startEngine() {
-            const inNic = document.getElementById('nic-in').value;
-            const outNic = document.getElementById('nic-out').value;
-            await fetch(`/api/engine/start?nic_in=${inNic}&nic_out=${outNic}`, {method: 'POST'});
+            try {
+                const response = await fetch('/api/engine/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Ошибка запуска');
+                }
+
+                showNotification('✅ Движок запущен', 'success');
+            } catch (error) {
+                showNotification('❌ ' + error.message, 'error');
+            }
         }
 
         async function stopEngine() {
-            await fetch('/api/engine/stop', {method: 'POST'});
+            try {
+                const response = await fetch('/api/engine/stop', {method: 'POST'});
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Ошибка остановки');
+                }
+                showNotification('⏹ Движок остановлен', 'success');
+            } catch (error) {
+                showNotification('❌ ' + error.message, 'error');
+            }
         }
 
         async function createProfile() {
-            const params = new URLSearchParams({
-                name: document.getElementById('p-name').value,
-                delay: document.getElementById('p-delay').value || 0,
-                loss: document.getElementById('p-loss').value || 0,
-                jitter: document.getElementById('p-jitter').value || 0,
-                dup: document.getElementById('p-dup').value || 0
-            });
-            await fetch(`/api/profiles?${params}`, {method: 'POST'});
-            loadProfiles();
+            const name = document.getElementById('p-name').value.trim();
+            const delay = document.getElementById('p-delay').value || 0;
+            const loss = document.getElementById('p-loss').value || 0;
+            const jitter = document.getElementById('p-jitter').value || 0;
+            const dup = document.getElementById('p-dup').value || 0;
+            const reorder = document.getElementById('p-reorder').value || 0;
+
+            if (!name) {
+                showNotification('❌ Введите имя профиля', 'error');
+                return;
+            }
+
+            try {
+                const params = new URLSearchParams({
+                    name: name,
+                    delay: delay,
+                    loss: loss,
+                    jitter: jitter,
+                    dup: dup,
+                    reorder: reorder
+                });
+
+                const response = await fetch(`/api/profiles?${params}`, {method: 'POST'});
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Ошибка создания');
+                }
+
+                showNotification(`✅ Профиль "${name}" создан`, 'success');
+
+                // Очистка формы
+                document.getElementById('p-name').value = '';
+                document.getElementById('p-delay').value = '';
+                document.getElementById('p-loss').value = '';
+                document.getElementById('p-jitter').value = '';
+                document.getElementById('p-dup').value = '';
+                document.getElementById('p-reorder').value = '';
+
+                loadProfiles();
+            } catch (error) {
+                showNotification('❌ ' + error.message, 'error');
+            }
         }
 
         async function loadProfiles() {
-    const res = await fetch('/api/profiles');
-    const profiles = await res.json();
-    const list = document.getElementById('profiles-list');
-    list.innerHTML = profiles.map(p =>
-        `<li class="flex items-center gap-2 mb-1">
-            <span>${p.is_active ? '🟢' : '⚪'} ${p.name} | Delay: ${p.delay_ms}ms | Loss: ${p.loss_percent}% | Jitter: ${p.jitter_ms}ms | Dup: ${p.duplication_percent}%</span>
-            ${!p.is_active ? `<button onclick="activateProfile(${p.id})" class="bg-yellow-600 hover:bg-yellow-700 px-2 py-1 rounded text-xs">Активировать</button>` : '<span class="text-green-400 text-xs">АКТИВЕН</span>'}
-        </li>`
-    ).join('');
-}
+            try {
+                const res = await fetch('/api/profiles');
+                const profiles = await res.json();
+                const list = document.getElementById('profiles-list');
 
-async function activateProfile(id) {
-    await fetch(`/api/profiles/${id}/activate`, {method: 'POST'});
-    loadProfiles();
-}
+                if (profiles.length === 0) {
+                    list.innerHTML = '<li class="text-gray-500 italic">Нет профилей</li>';
+                    return;
+                }
+
+                list.innerHTML = profiles.map(p => `
+                    <li class="flex items-center gap-2 mb-2 p-2 bg-gray-700 rounded">
+                        <span class="status-dot ${p.is_active ? 'status-active' : 'status-inactive'}"></span>
+                        <span class="flex-1">
+                            <strong>${p.name}</strong> |
+                            Delay: ${p.delay_ms}ms |
+                            Loss: ${p.loss_percent}% |
+                            Jitter: ${p.jitter_ms}ms |
+                            Dup: ${p.duplication_percent}%
+                        </span>
+                        ${!p.is_active ?
+                            `<button onclick="activateProfile(${p.id})" class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded text-xs">
+                                Активировать
+                            </button>` :
+                            `<span class="text-green-400 text-xs font-bold">🟢 АКТИВЕН</span>`
+                        }
+                        <button onclick="deleteProfile(${p.id}, '${p.name}')" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-xs">
+                            🗑
+                        </button>
+                    </li>
+                `).join('');
+            } catch (error) {
+                showNotification('❌ Ошибка загрузки профилей', 'error');
+            }
+        }
+
+        async function activateProfile(id) {
+            try {
+                const response = await fetch(`/api/profiles/${id}/activate`, {method: 'POST'});
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Ошибка активации');
+                }
+                showNotification('✅ Профиль активирован', 'success');
+                loadProfiles();
+                loadActiveProfile();
+            } catch (error) {
+                showNotification('❌ ' + error.message, 'error');
+            }
+        }
+
+        async function deleteProfile(id, name) {
+            if (!confirm(`Удалить профиль "${name}"?`)) return;
+
+            try {
+                const response = await fetch(`/api/profiles/${id}`, {method: 'DELETE'});
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Ошибка удаления');
+                }
+                showNotification(`🗑 Профиль "${name}" удален`, 'success');
+                loadProfiles();
+            } catch (error) {
+                showNotification('❌ ' + error.message, 'error');
+            }
+        }
+
+        async function loadActiveProfile() {
+            try {
+                const res = await fetch('/api/active_profile');
+                const profile = await res.json();
+                const info = document.getElementById('active-profile-info');
+
+                if (profile) {
+                    info.innerHTML = `
+                        <div class="bg-green-900 bg-opacity-30 p-4 rounded border border-green-700">
+                            <h3 class="text-green-400 font-bold text-lg">🟢 ${profile.name}</h3>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2 text-sm">
+                                <div>Задержка: <strong>${profile.delay_ms} мс</strong></div>
+                                <div>Потери: <strong>${profile.loss_percent}%</strong></div>
+                                <div>Джиттер: <strong>${profile.jitter_ms} мс</strong></div>
+                                <div>Дублирование: <strong>${profile.duplication_percent}%</strong></div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    info.innerHTML = '<div class="text-gray-500 italic">Профиль не выбран</div>';
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки активного профиля:', error);
+            }
+        }
+
+        // ==================== Инициализация ====================
+        connectWebSocket();
         loadProfiles();
+        loadActiveProfile();
+
+        // Обновление активного профиля каждые 5 секунд
+        setInterval(loadActiveProfile, 5000);
     </script>
 </body>
 </html>
