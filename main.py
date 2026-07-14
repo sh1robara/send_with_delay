@@ -5,10 +5,9 @@ from sqlalchemy.orm import Session
 import asyncio
 import logging
 
-from db import get_db, ImpairmentProfile, AuditLog
+from db import get_db, ImpairmentProfile, AuditLog, RoutingConfig
 from engine import packet_engine
 
-# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -16,20 +15,110 @@ app = FastAPI(title="Network Impairment Emulator")
 templates = Jinja2Templates(directory="templates")
 
 
-# ==================== REST API ====================
+# ==================== API МАРШРУТОВ ====================
 
-@app.get("/api/interfaces")
-def get_interfaces():
-    """Получение списка сетевых интерфейсов (для режима симуляции - заглушка)"""
-    return [
-        {"name": "Simulation-IN (127.0.0.1:5005)", "ip": "127.0.0.1", "mac": "00:00:00:00:00:01"},
-        {"name": "Simulation-OUT (127.0.0.1:5006)", "ip": "127.0.0.1", "mac": "00:00:00:00:00:02"}
-    ]
+@app.get("/api/routes")
+def get_routes(db: Session = Depends(get_db)):
+    """Получение списка всех маршрутов"""
+    routes = db.query(RoutingConfig).all()
+    return [r.to_dict() for r in routes]
 
+
+@app.post("/api/routes")
+def create_route(
+        name: str,
+        listen_ip: str = "0.0.0.0",
+        listen_port: int = 5005,
+        forward_ip: str = "127.0.0.1",
+        forward_port: int = 5006,
+        db: Session = Depends(get_db)
+):
+    """Создание нового маршрута"""
+
+    # Валидация
+    if not name or not name.strip():
+        raise HTTPException(400, "Имя маршрута не может быть пустым")
+
+    if listen_port < 1 or listen_port > 65535:
+        raise HTTPException(400, "Порт приёма должен быть от 1 до 65535")
+
+    if forward_port < 1 or forward_port > 65535:
+        raise HTTPException(400, "Порт отправки должен быть от 1 до 65535")
+
+    # Проверка уникальности имени
+    existing = db.query(RoutingConfig).filter(RoutingConfig.name == name).first()
+    if existing:
+        raise HTTPException(400, f"Маршрут с именем '{name}' уже существует")
+
+    route = RoutingConfig(
+        name=name.strip(),
+        listen_ip=listen_ip,
+        listen_port=listen_port,
+        forward_ip=forward_ip,
+        forward_port=forward_port
+    )
+    db.add(route)
+    db.commit()
+    db.refresh(route)
+
+    log = AuditLog(
+        action="CREATE_ROUTE",
+        details=f"Created '{name}': {listen_ip}:{listen_port} -> {forward_ip}:{forward_port}"
+    )
+    db.add(log)
+    db.commit()
+
+    logger.info(f"Создан маршрут: {name}")
+    return route.to_dict()
+
+
+@app.post("/api/routes/{route_id}/activate")
+def activate_route(route_id: int, db: Session = Depends(get_db)):
+    """Активация маршрута"""
+    route = db.query(RoutingConfig).filter(RoutingConfig.id == route_id).first()
+
+    if not route:
+        raise HTTPException(404, "Route not found")
+
+    # Деактивируем все маршруты
+    db.query(RoutingConfig).update({RoutingConfig.is_active: False})
+    route.is_active = True
+    db.commit()
+
+    log = AuditLog(
+        action="ACTIVATE_ROUTE",
+        details=f"Activated '{route.name}': {route.listen_ip}:{route.listen_port} -> {route.forward_ip}:{route.forward_port}"
+    )
+    db.add(log)
+    db.commit()
+
+    logger.info(f"Активирован маршрут: {route.name}")
+    return {"status": "activated", "route": route.to_dict()}
+
+
+@app.delete("/api/routes/{route_id}")
+def delete_route(route_id: int, db: Session = Depends(get_db)):
+    """Удаление маршрута"""
+    route = db.query(RoutingConfig).filter(RoutingConfig.id == route_id).first()
+
+    if not route:
+        raise HTTPException(404, "Route not found")
+
+    name = route.name
+    db.delete(route)
+    db.commit()
+
+    log = AuditLog(action="DELETE_ROUTE", details=f"Deleted '{name}'")
+    db.add(log)
+    db.commit()
+
+    return {"status": "deleted"}
+
+
+# ==================== API ПРОФИЛЕЙ ПОМЕХ ====================
 
 @app.get("/api/profiles")
 def get_profiles(db: Session = Depends(get_db)):
-    """Получение списка всех профилей помех"""
     return db.query(ImpairmentProfile).all()
 
 
@@ -44,28 +133,17 @@ def create_profile(
         bandwidth: int = 0,
         db: Session = Depends(get_db)
 ):
-    """Создание нового профиля помех с валидацией"""
-
-    # Валидация входных данных
     if not name or not name.strip():
         raise HTTPException(400, "Имя профиля не может быть пустым")
-
     if delay < 0:
         raise HTTPException(400, "Задержка не может быть отрицательной")
-
     if loss < 0 or loss > 100:
         raise HTTPException(400, "Процент потерь должен быть от 0 до 100")
-
     if jitter < 0:
         raise HTTPException(400, "Джиттер не может быть отрицательным")
-
     if dup < 0 or dup > 100:
         raise HTTPException(400, "Процент дублирования должен быть от 0 до 100")
 
-    if reorder < 0 or reorder > 100:
-        raise HTTPException(400, "Процент перестановки должен быть от 0 до 100")
-
-    # Проверка уникальности имени
     existing = db.query(ImpairmentProfile).filter(ImpairmentProfile.name == name).first()
     if existing:
         raise HTTPException(400, f"Профиль с именем '{name}' уже существует")
@@ -83,7 +161,6 @@ def create_profile(
     db.commit()
     db.refresh(profile)
 
-    # Запись в журнал аудита
     log = AuditLog(
         action="CREATE_PROFILE",
         details=f"Created '{name}' (delay={delay}ms, loss={loss}%, jitter={jitter}ms, dup={dup}%)"
@@ -97,23 +174,16 @@ def create_profile(
 
 @app.post("/api/profiles/{profile_id}/activate")
 def activate_profile(profile_id: int, db: Session = Depends(get_db)):
-    """Активация профиля помех"""
-    profile = db.query(ImpairmentProfile).filter(
-        ImpairmentProfile.id == profile_id
-    ).first()
+    profile = db.query(ImpairmentProfile).filter(ImpairmentProfile.id == profile_id).first()
 
     if not profile:
         raise HTTPException(404, "Profile not found")
 
-    # Деактивируем все профили
     db.query(ImpairmentProfile).update({ImpairmentProfile.is_active: False})
     profile.is_active = True
     db.commit()
 
-    log = AuditLog(
-        action="ACTIVATE_PROFILE",
-        details=f"Activated '{profile.name}'"
-    )
+    log = AuditLog(action="ACTIVATE_PROFILE", details=f"Activated '{profile.name}'")
     db.add(log)
     db.commit()
 
@@ -121,32 +191,9 @@ def activate_profile(profile_id: int, db: Session = Depends(get_db)):
     return {"status": "activated", "profile": profile.name}
 
 
-@app.post("/api/profiles/{profile_id}/deactivate")
-def deactivate_profile(profile_id: int, db: Session = Depends(get_db)):
-    """Деактивация профиля"""
-    profile = db.query(ImpairmentProfile).filter(
-        ImpairmentProfile.id == profile_id
-    ).first()
-
-    if not profile:
-        raise HTTPException(404, "Profile not found")
-
-    profile.is_active = False
-    db.commit()
-
-    log = AuditLog(action="DEACTIVATE_PROFILE", details=f"Deactivated '{profile.name}'")
-    db.add(log)
-    db.commit()
-
-    return {"status": "deactivated"}
-
-
 @app.delete("/api/profiles/{profile_id}")
 def delete_profile(profile_id: int, db: Session = Depends(get_db)):
-    """Удаление профиля"""
-    profile = db.query(ImpairmentProfile).filter(
-        ImpairmentProfile.id == profile_id
-    ).first()
+    profile = db.query(ImpairmentProfile).filter(ImpairmentProfile.id == profile_id).first()
 
     if not profile:
         raise HTTPException(404, "Profile not found")
@@ -162,6 +209,8 @@ def delete_profile(profile_id: int, db: Session = Depends(get_db)):
     return {"status": "deleted"}
 
 
+# ==================== API ДВИЖКА ====================
+
 @app.post("/api/engine/start")
 async def start_engine(request: Request, db: Session = Depends(get_db)):
     """Запуск движка обработки пакетов"""
@@ -175,16 +224,22 @@ async def start_engine(request: Request, db: Session = Depends(get_db)):
 
     try:
         if packet_engine.start(nic_in=nic_in, nic_out=nic_out):
-            # Автоматически активируем первый профиль, если есть
+            # Автоматически активируем первый профиль и маршрут, если есть
             first_profile = db.query(ImpairmentProfile).first()
             if first_profile:
                 db.query(ImpairmentProfile).update({ImpairmentProfile.is_active: False})
                 first_profile.is_active = True
-                db.commit()
+
+            first_route = db.query(RoutingConfig).first()
+            if first_route:
+                db.query(RoutingConfig).update({RoutingConfig.is_active: False})
+                first_route.is_active = True
+
+            db.commit()
 
             log = AuditLog(
                 action="START_ENGINE",
-                details=f"Engine started. NIC-IN: {nic_in or packet_engine.nic_in}, NIC-OUT: {nic_out or packet_engine.nic_out}"
+                details=f"Engine started. Route: {packet_engine.listen_ip}:{packet_engine.listen_port} -> {packet_engine.forward_ip}:{packet_engine.forward_port}"
             )
             db.add(log)
             db.commit()
@@ -200,7 +255,6 @@ async def start_engine(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/api/engine/stop")
 def stop_engine(db: Session = Depends(get_db)):
-    """Остановка движка"""
     packet_engine.stop()
 
     log = AuditLog(action="STOP_ENGINE", details="Engine stopped")
@@ -213,16 +267,12 @@ def stop_engine(db: Session = Depends(get_db)):
 
 @app.get("/api/stats")
 def get_stats():
-    """Получение текущей статистики"""
     return packet_engine.stats
 
 
 @app.get("/api/active_profile")
 def get_active_profile(db: Session = Depends(get_db)):
-    """Получение активного профиля"""
-    profile = db.query(ImpairmentProfile).filter(
-        ImpairmentProfile.is_active == True
-    ).first()
+    profile = db.query(ImpairmentProfile).filter(ImpairmentProfile.is_active == True).first()
 
     if profile:
         return {
@@ -236,11 +286,20 @@ def get_active_profile(db: Session = Depends(get_db)):
     return None
 
 
+@app.get("/api/active_route")
+def get_active_route(db: Session = Depends(get_db)):
+    """Получение активного маршрута"""
+    route = db.query(RoutingConfig).filter(RoutingConfig.is_active == True).first()
+
+    if route:
+        return route.to_dict()
+    return None
+
+
 # ==================== WebSocket ====================
 
 @app.websocket("/ws/stats")
 async def websocket_stats(websocket: WebSocket):
-    """WebSocket для передачи статистики в реальном времени"""
     await websocket.accept()
     logger.info("WebSocket клиент подключен")
 
@@ -249,8 +308,9 @@ async def websocket_stats(websocket: WebSocket):
             data = {
                 "stats": packet_engine.stats,
                 "engine_running": packet_engine.running,
-                "nic_in": getattr(packet_engine, 'nic_in', 'N/A'),
-                "nic_out": getattr(packet_engine, 'nic_out', 'N/A')
+                "nic_in": f"{packet_engine.listen_ip}:{packet_engine.listen_port}",
+                "nic_out": f"{packet_engine.forward_ip}:{packet_engine.forward_port}",
+                "active_route": packet_engine.active_route_name
             }
             await websocket.send_json(data)
             await asyncio.sleep(1)
@@ -264,18 +324,11 @@ async def websocket_stats(websocket: WebSocket):
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    """Главная страница - дашборд"""
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html"
-    )
+    return templates.TemplateResponse(request=request, name="index.html")
 
-
-# ==================== Graceful Shutdown ====================
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Корректная остановка сервера"""
     logger.info("Остановка сервера...")
     packet_engine.stop()
     await asyncio.sleep(1)

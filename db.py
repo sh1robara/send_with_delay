@@ -8,6 +8,37 @@ engine = create_engine('sqlite:///impairment_db.sqlite', connect_args={"check_sa
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+class RoutingConfig(Base):
+    """Конфигурация маршрута: откуда принимать и куда отправлять пакеты"""
+    __tablename__ = "routing_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True, nullable=False)
+
+    # Параметры приёма (NIC-IN)
+    listen_ip = Column(String, default="0.0.0.0")
+    listen_port = Column(Integer, default=5005)
+
+    # Параметры отправки (NIC-OUT)
+    forward_ip = Column(String, default="127.0.0.1")
+    forward_port = Column(Integer, default=5006)
+
+    is_active = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "listen_ip": self.listen_ip,
+            "listen_port": self.listen_port,
+            "forward_ip": self.forward_ip,
+            "forward_port": self.forward_port,
+            "is_active": self.is_active,
+            "created_at": str(self.created_at) if self.created_at else None
+        }
+
+
 class ImpairmentProfile(Base):
     """Профиль помех - набор параметров для ухудшения канала"""
     __tablename__ = "profiles"

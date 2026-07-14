@@ -20,7 +20,7 @@
     <h1 class="text-3xl font-bold mb-6 text-blue-400">📡 Network Impairment Emulator</h1>
 
     <!-- Дашборд статистики -->
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+    <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
         <div class="bg-gray-800 p-4 rounded shadow">
             <h3 class="text-gray-400 text-sm">Принято</h3>
             <p id="stat-recv" class="text-2xl font-bold text-green-400">0</p>
@@ -41,11 +41,15 @@
             <h3 class="text-gray-400 text-sm">Ср. задержка (мс)</h3>
             <p id="stat-delay" class="text-2xl font-bold text-yellow-400">0.0</p>
         </div>
+        <div class="bg-gray-800 p-4 rounded shadow">
+            <h3 class="text-gray-400 text-sm">Смен маршрута</h3>
+            <p id="stat-routes" class="text-2xl font-bold text-cyan-400">0</p>
+        </div>
     </div>
 
     <!-- Управление движком -->
     <div class="bg-gray-800 p-6 rounded shadow mb-8">
-        <h2 class="text-xl font-bold mb-4">⚙️ Управление движком</h2>
+        <h2 class="text-xl font-bold mb-4">️ Управление движком</h2>
         <div class="flex gap-4 items-end flex-wrap">
             <button onclick="startEngine()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded font-semibold">
                 ▶ Запустить
@@ -57,17 +61,42 @@
                 <span class="status-dot status-inactive"></span>Остановлен
             </span>
         </div>
+        <div id="current-route-info" class="mt-4 text-sm text-gray-300">
+            Текущий маршрут: не задан
+        </div>
     </div>
 
     <!-- Активный профиль -->
     <div class="bg-gray-800 p-6 rounded shadow mb-8">
-        <h2 class="text-xl font-bold mb-4">🎯 Активный профиль</h2>
+        <h2 class="text-xl font-bold mb-4">🎯 Активный профиль помех</h2>
         <div id="active-profile-info" class="text-gray-300">
             Профиль не выбран
         </div>
     </div>
 
-    <!-- Создание профиля -->
+    <!-- Управление маршрутами -->
+    <div class="bg-gray-800 p-6 rounded shadow mb-8">
+        <h2 class="text-xl font-bold mb-4"> Управление маршрутами</h2>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+            <input id="r-name" type="text" placeholder="Имя маршрута" class="bg-gray-700 p-2 rounded">
+            <input id="r-listen-ip" type="text" placeholder="IP приёма" value="0.0.0.0" class="bg-gray-700 p-2 rounded">
+            <input id="r-listen-port" type="number" placeholder="Порт приёма" value="5005" class="bg-gray-700 p-2 rounded">
+            <input id="r-forward-ip" type="text" placeholder="IP отправки" value="127.0.0.1" class="bg-gray-700 p-2 rounded">
+            <input id="r-forward-port" type="number" placeholder="Порт отправки" value="5006" class="bg-gray-700 p-2 rounded">
+        </div>
+        <button onclick="createRoute()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-semibold">
+            💾 Сохранить маршрут
+        </button>
+
+        <h3 class="mt-6 mb-2 font-bold"> Маршруты:</h3>
+        <ul id="routes-list" class="list-none text-gray-300"></ul>
+
+        <div class="mt-4 p-3 bg-yellow-900 bg-opacity-30 border border-yellow-700 rounded text-sm text-yellow-300">
+            ️ <strong>Внимание:</strong> Смена активного маршрута во время работы движка приведёт к пересозданию сокета и потере пакетов в очереди.
+        </div>
+    </div>
+
+    <!-- Создание профиля помех -->
     <div class="bg-gray-800 p-6 rounded shadow">
         <h2 class="text-xl font-bold mb-4">➕ Создать профиль помех</h2>
         <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4">
@@ -82,7 +111,7 @@
             💾 Сохранить профиль
         </button>
 
-        <h3 class="mt-6 mb-2 font-bold">📋 Профили:</h3>
+        <h3 class="mt-6 mb-2 font-bold"> Профили:</h3>
         <ul id="profiles-list" class="list-none text-gray-300"></ul>
     </div>
 
@@ -135,6 +164,7 @@
             document.getElementById('stat-drop').innerText = data.stats.dropped;
             document.getElementById('stat-dup').innerText = data.stats.duplicated || 0;
             document.getElementById('stat-delay').innerText = (data.stats.avg_delay || 0).toFixed(2);
+            document.getElementById('stat-routes').innerText = data.stats.route_changes || 0;
 
             const statusEl = document.getElementById('engine-status');
             if (data.engine_running) {
@@ -144,6 +174,11 @@
                 statusEl.innerHTML = `<span class="status-dot status-inactive"></span>⛔ Остановлен`;
                 statusEl.className = "text-sm text-red-400 ml-4 font-bold";
             }
+
+            // Обновляем информацию о текущем маршруте
+            document.getElementById('current-route-info').innerHTML =
+                `Текущий маршрут: <strong>${data.nic_in}</strong> → <strong>${data.nic_out}</strong> ` +
+                `(активный: ${data.active_route || 'не задан'})`;
         }
 
         // ==================== Уведомления ====================
@@ -154,7 +189,8 @@
             const colors = {
                 'success': 'border-green-500 text-green-400',
                 'error': 'border-red-500 text-red-400',
-                'info': 'border-blue-500 text-blue-400'
+                'info': 'border-blue-500 text-blue-400',
+                'warning': 'border-yellow-500 text-yellow-400'
             };
 
             notif.className = `fixed top-4 right-4 ${colors[type]} bg-gray-800 border-l-4 p-4 rounded shadow-lg max-w-md`;
@@ -164,7 +200,116 @@
             setTimeout(() => notif.classList.add('hidden'), 3000);
         }
 
-        // ==================== API функции ====================
+        // ==================== API функции: МАРШРУТЫ ====================
+        async function createRoute() {
+            const name = document.getElementById('r-name').value.trim();
+            const listenIp = document.getElementById('r-listen-ip').value.trim() || '0.0.0.0';
+            const listenPort = parseInt(document.getElementById('r-listen-port').value) || 5005;
+            const forwardIp = document.getElementById('r-forward-ip').value.trim() || '127.0.0.1';
+            const forwardPort = parseInt(document.getElementById('r-forward-port').value) || 5006;
+
+            if (!name) {
+                showNotification('❌ Введите имя маршрута', 'error');
+                return;
+            }
+
+            if (listenPort < 1 || listenPort > 65535 || forwardPort < 1 || forwardPort > 65535) {
+                showNotification('❌ Порты должны быть от 1 до 65535', 'error');
+                return;
+            }
+
+            try {
+                const params = new URLSearchParams({
+                    name: name,
+                    listen_ip: listenIp,
+                    listen_port: listenPort,
+                    forward_ip: forwardIp,
+                    forward_port: forwardPort
+                });
+
+                const response = await fetch(`/api/routes?${params}`, {method: 'POST'});
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Ошибка создания');
+                }
+
+                showNotification(`✅ Маршрут "${name}" создан`, 'success');
+
+                // Очистка формы
+                document.getElementById('r-name').value = '';
+
+                loadRoutes();
+            } catch (error) {
+                showNotification(' ' + error.message, 'error');
+            }
+        }
+
+        async function loadRoutes() {
+            try {
+                const res = await fetch('/api/routes');
+                const routes = await res.json();
+                const list = document.getElementById('routes-list');
+
+                if (routes.length === 0) {
+                    list.innerHTML = '<li class="text-gray-500 italic">Нет маршрутов</li>';
+                    return;
+                }
+
+                list.innerHTML = routes.map(r => `
+                    <li class="flex items-center gap-2 mb-2 p-2 bg-gray-700 rounded">
+                        <span class="status-dot ${r.is_active ? 'status-active' : 'status-inactive'}"></span>
+                        <span class="flex-1">
+                            <strong>${r.name}</strong> |
+                            ${r.listen_ip}:${r.listen_port} → ${r.forward_ip}:${r.forward_port}
+                        </span>
+                        ${!r.is_active ?
+                            `<button onclick="activateRoute(${r.id})" class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded text-xs">
+                                Активировать
+                            </button>` :
+                            `<span class="text-green-400 text-xs font-bold"> АКТИВЕН</span>`
+                        }
+                        <button onclick="deleteRoute(${r.id}, '${r.name}')" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-xs">
+                            🗑
+                        </button>
+                    </li>
+                `).join('');
+            } catch (error) {
+                showNotification('❌ Ошибка загрузки маршрутов', 'error');
+            }
+        }
+
+        async function activateRoute(id) {
+            try {
+                const response = await fetch(`/api/routes/${id}/activate`, {method: 'POST'});
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Ошибка активации');
+                }
+                showNotification('✅ Маршрут активирован', 'success');
+                loadRoutes();
+            } catch (error) {
+                showNotification('❌ ' + error.message, 'error');
+            }
+        }
+
+        async function deleteRoute(id, name) {
+            if (!confirm(`Удалить маршрут "${name}"?`)) return;
+
+            try {
+                const response = await fetch(`/api/routes/${id}`, {method: 'DELETE'});
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Ошибка удаления');
+                }
+                showNotification(`🗑 Маршрут "${name}" удален`, 'success');
+                loadRoutes();
+            } catch (error) {
+                showNotification('❌ ' + error.message, 'error');
+            }
+        }
+
+        // ==================== API функции: ДВИЖОК ====================
         async function startEngine() {
             try {
                 const response = await fetch('/api/engine/start', {
@@ -191,12 +336,13 @@
                     const error = await response.json();
                     throw new Error(error.detail || 'Ошибка остановки');
                 }
-                showNotification('⏹ Движок остановлен', 'success');
+                showNotification(' Движок остановлен', 'success');
             } catch (error) {
                 showNotification('❌ ' + error.message, 'error');
             }
         }
 
+        // ==================== API функции: ПРОФИЛИ ====================
         async function createProfile() {
             const name = document.getElementById('p-name').value.trim();
             const delay = document.getElementById('p-delay').value || 0;
@@ -229,7 +375,6 @@
 
                 showNotification(`✅ Профиль "${name}" создан`, 'success');
 
-                // Очистка формы
                 document.getElementById('p-name').value = '';
                 document.getElementById('p-delay').value = '';
                 document.getElementById('p-loss').value = '';
@@ -339,10 +484,10 @@
 
         // ==================== Инициализация ====================
         connectWebSocket();
+        loadRoutes();
         loadProfiles();
         loadActiveProfile();
 
-        // Обновление активного профиля каждые 5 секунд
         setInterval(loadActiveProfile, 5000);
     </script>
 </body>
