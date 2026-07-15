@@ -44,13 +44,14 @@
                 </div>
             </header>
 
-            <nav class="sidebar">
-                <button class="nav-btn active" onclick="showSection('dashboard')">📊 Дашборд</button>
-                <button class="nav-btn" onclick="showSection('routes')">🌐 Маршруты</button>
-                <button class="nav-btn" onclick="showSection('profiles')">🎯 Профили помех</button>
-                <button class="nav-btn" onclick="showSection('sessions')">📋 Сессии</button>
-                <button class="nav-btn" onclick="showSection('sniffer')">🔍 Снифер</button>
-                <button class="nav-btn" onclick="showSection('logs')"> Журналы</button>
+            <!-- Горизонтальное меню -->
+            <nav class="navbar">
+                <button class="nav-btn active" onclick="showSection('dashboard', this)"> Дашборд</button>
+                <button class="nav-btn" onclick="showSection('routes', this)">🌐 Маршруты</button>
+                <button class="nav-btn" onclick="showSection('profiles', this)">🎯 Профили помех</button>
+                <button class="nav-btn" onclick="showSection('sessions', this)"> Сессии</button>
+                <button class="nav-btn" onclick="showSection('sniffer', this)">🔍 Снифер</button>
+                <button class="nav-btn" onclick="showSection('logs', this)">📜 Журналы аудита</button>
             </nav>
 
             <main class="content">
@@ -85,7 +86,7 @@
                         <h3>⚙️ Управление движком</h3>
                         <div class="form-row">
                             <button class="btn btn-success" onclick="startEngine()">▶ Запустить</button>
-                            <button class="btn btn-danger" onclick="stopEngine()">⏹ Остановить</button>
+                            <button class="btn btn-danger" onclick="stopEngine()"> Остановить</button>
                             <span id="engine-status" class="status-badge">
                                 <span class="status-dot status-inactive"></span>Остановлен
                             </span>
@@ -117,18 +118,30 @@
                     <h2>Управление маршрутами</h2>
 
                     <div class="card">
-                        <h3>➕ Создать маршрут</h3>
+                        <h3> Создать маршрут</h3>
                         <div class="form-grid">
-                            <input id="r-name" type="text" placeholder="Имя маршрута">
-                            <input id="r-listen-port" type="number" placeholder="Порт приёма" value="5005" min="1" max="65535">
-                            <input id="r-forward-ip" type="text" placeholder="IP получателя" value="127.0.0.1">
-                            <input id="r-forward-port" type="number" placeholder="Порт получателя" value="5006" min="1" max="65535">
+                            <div class="form-group">
+                                <label for="r-name">Имя маршрута</label>
+                                <input id="r-name" type="text" placeholder="Например: Test Route">
+                            </div>
+                            <div class="form-group">
+                                <label for="r-listen-port">Порт приёма</label>
+                                <input id="r-listen-port" type="number" placeholder="5005" value="5005" min="1" max="65535">
+                            </div>
+                            <div class="form-group">
+                                <label for="r-forward-ip">IP получателя</label>
+                                <input id="r-forward-ip" type="text" placeholder="127.0.0.1" value="127.0.0.1">
+                            </div>
+                            <div class="form-group">
+                                <label for="r-forward-port">Порт получателя</label>
+                                <input id="r-forward-port" type="number" placeholder="5006" value="5006" min="1" max="65535">
+                            </div>
                         </div>
                         <button class="btn btn-primary" onclick="createRoute()">💾 Сохранить маршрут</button>
                     </div>
 
                     <div class="card">
-                        <h3> Список маршрутов</h3>
+                        <h3>📋 Список маршрутов</h3>
                         <div id="routes-list"></div>
                     </div>
                 </section>
@@ -140,14 +153,32 @@
                     <div class="card">
                         <h3>➕ Создать профиль</h3>
                         <div class="form-grid">
-                            <input id="p-name" type="text" placeholder="Имя профиля">
-                            <input id="p-delay" type="number" placeholder="Задержка (мс)" min="0" value="0">
-                            <input id="p-loss" type="number" placeholder="Потери (%)" min="0" max="100" value="0">
-                            <input id="p-jitter" type="number" placeholder="Джиттер (мс)" min="0" value="0">
-                            <input id="p-dup" type="number" placeholder="Дубликат (%)" min="0" max="100" value="0">
-                            <input id="p-bandwidth" type="number" placeholder="Макс. скорость (Кбит/с)" min="0" value="0">
+                            <div class="form-group">
+                                <label for="p-name">Имя профиля</label>
+                                <input id="p-name" type="text" placeholder="Например: Bad Radio">
+                            </div>
+                            <div class="form-group">
+                                <label for="p-delay">Задержка (мс)</label>
+                                <input id="p-delay" type="number" placeholder="0" min="0" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="p-loss">Потери (%)</label>
+                                <input id="p-loss" type="number" placeholder="0" min="0" max="100" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="p-jitter">Джиттер (мс)</label>
+                                <input id="p-jitter" type="number" placeholder="0" min="0" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="p-dup">Дублирование (%)</label>
+                                <input id="p-dup" type="number" placeholder="0" min="0" max="100" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="p-bandwidth">Макс. скорость (Мбит/с)</label>
+                                <input id="p-bandwidth" type="number" placeholder="0 = без лимита" min="0" value="0">
+                            </div>
                         </div>
-                        <button class="btn btn-primary" onclick="createProfile()"> Сохранить профиль</button>
+                        <button class="btn btn-primary" onclick="createProfile()">💾 Сохранить профиль</button>
                     </div>
 
                     <div class="card">
@@ -203,11 +234,37 @@
                     </div>
                 </section>
 
-                <!-- ЖУРНАЛЫ -->
+                <!-- ЖУРНАЛЫ АУДИТА -->
                 <section id="section-logs" class="section">
                     <h2>Журналы аудита</h2>
                     <div class="card">
-                        <p>Журналы аудита доступны в разделе API или через экспорт данных.</p>
+                        <h3>ℹ️ О разделе</h3>
+                        <p style="color: #94a3b8; line-height: 1.8;">
+                            <strong>Журналы аудита</strong> — это системный лог всех значимых действий пользователей в системе.
+                            Здесь фиксируются:
+                        </p>
+                        <ul style="color: #94a3b8; margin: 1rem 0 1rem 2rem; line-height: 1.8;">
+                            <li>Входы и выходы пользователей</li>
+                            <li>Регистрация новых пользователей</li>
+                            <li>Создание, изменение и удаление маршрутов</li>
+                            <li>Создание, изменение и удаление профилей помех</li>
+                            <li>Активация и деактивация маршрутов и профилей</li>
+                            <li>Запуск и остановка движка обработки пакетов</li>
+                        </ul>
+                        <p style="color: #94a3b8; line-height: 1.8;">
+                            <strong>Зачем это нужно?</strong> Журнал аудита обеспечивает прозрачность работы системы,
+                            позволяет отследить, кто и когда вносил изменения в конфигурацию. Это важно для:
+                        </p>
+                        <ul style="color: #94a3b8; margin: 1rem 0 1rem 2rem; line-height: 1.8;">
+                            <li>Расследования инцидентов и ошибок</li>
+                            <li>Контроля действий пользователей</li>
+                            <li>Соответствия требованиям безопасности</li>
+                            <li>Восстановления последовательности действий при анализе результатов испытаний</li>
+                        </ul>
+                        <p style="color: #94a3b8; margin-top: 1rem;">
+                            <em>Примечание: В текущей версии журналы хранятся в базе данных и доступны через API.
+                            Для просмотра используйте endpoint <code>/api/audit-logs</code> или экспорт данных.</em>
+                        </p>
                     </div>
                 </section>
             </main>
@@ -317,10 +374,10 @@
                 updateDashboard(data);
             };
 
-            ws.onerror = (error) => console.error('❌ WebSocket ошибка:', error);
+            ws.onerror = (error) => console.error(' WebSocket ошибка:', error);
 
             ws.onclose = () => {
-                console.log(' WebSocket отключен. Переподключение...');
+                console.log('🔌 WebSocket отключен. Переподключение...');
                 setTimeout(connectWebSocket, 3000);
             };
         }
@@ -382,12 +439,12 @@
         }
 
         // ==================== НАВИГАЦИЯ ====================
-        function showSection(sectionName) {
+        function showSection(sectionName, btn) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
 
             document.getElementById(`section-${sectionName}`).classList.add('active');
-            event.target.classList.add('active');
+            if (btn) btn.classList.add('active');
 
             if (sectionName === 'sessions') loadSessions();
         }
@@ -478,7 +535,7 @@
                         <span class="status-dot ${p.is_active ? 'status-active' : 'status-inactive'}"></span>
                         <div class="flex-1">
                             <strong>${p.name}</strong><br>
-                            <small>Delay: ${p.delay_ms}ms | Loss: ${p.loss_percent}% | BW: ${p.bandwidth_kbps || '∞'} kbps</small>
+                            <small>Delay: ${p.delay_ms}ms | Loss: ${p.loss_percent}% | BW: ${p.bandwidth_kbps || '∞'} Мбит/с</small>
                         </div>
                         <button class="btn btn-warning btn-sm" onclick="activateProfile(${p.id})">
                             ${p.is_active ? '✓ Активен' : 'Активировать'}
@@ -495,8 +552,13 @@
                 for (const p of profiles) {
                     if (p.id === id && !p.is_active) {
                         await apiCall(`/api/profiles/${p.id}/activate`, {method: 'POST'});
-                    } else if (p.is_active) {
-                        await apiCall(`/api/profiles/${p.id}/deactivate`, {method: 'POST'});
+                    } else if (p.is_active && p.id !== id) {
+                        // Деактивируем другие профили
+                        try {
+                            await apiCall(`/api/profiles/${p.id}/deactivate`, {method: 'POST'});
+                        } catch (e) {
+                            console.log('Deactivate endpoint not available, skipping');
+                        }
                     }
                 }
                 showNotification('Профиль активирован', 'success');

@@ -13437,3 +13437,8 @@ AttributeError: module 'bcrypt' has no attribute '__about__'
 2026-07-15 14:17:19,707 [ERROR] Ошибка: Instance <RoutingConfig at 0x16d5ef982b0> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
 2026-07-15 14:17:19,808 [ERROR] Ошибка: Instance <RoutingConfig at 0x16d5ef982b0> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
 2026-07-15 14:22:42,237 [ERROR] Ошибка: [WinError 10038] Сделана попытка выполнить операцию на объекте, не являющемся сокетом
+2026-07-15 14:29:21,836 [INFO] Маршрут '1' запущен на порту 5005
+2026-07-15 16:13:30,331 [INFO] Маршрут '1': без профиля (прозрачный режим)
+2026-07-15 16:13:30,332 [INFO] Маршрут '1' запущен на порту 5005
+2026-07-15 16:14:10,270 [INFO] Маршрут '1' остановлен
+2026-07-15 16:21:27,668 [INFO] Движок полностью остановлен

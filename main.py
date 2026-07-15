@@ -107,7 +107,6 @@ def create_route(
 
 @app.post("/api/routes/{route_id}/activate")
 def activate_route(route_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Активация маршрута"""
     route = db.query(RoutingConfig).filter(RoutingConfig.id == route_id).first()
     if not route:
         raise HTTPException(404, "Маршрут не найден")
@@ -117,12 +116,8 @@ def activate_route(route_id: int, user: User = Depends(get_current_user), db: Se
     route.is_active = True
     db.commit()
 
-    db.add(AuditLog(
-        user_id=user.id,
-        username=user.username,
-        action="ACTIVATE_ROUTE",
-        details=f"Activated '{route.name}'"
-    ))
+    db.add(
+        AuditLog(user_id=user.id, username=user.username, action="ACTIVATE_ROUTE", details=f"Activated '{route.name}'"))
     db.commit()
 
     return {"status": "activated", "route": route.to_dict()}
@@ -156,7 +151,7 @@ def get_profiles(user: User = Depends(get_current_user), db: Session = Depends(g
 @app.post("/api/profiles")
 def create_profile(
         name: str, delay: float = 0, loss: float = 0, jitter: float = 0, dup: float = 0,
-        bandwidth: int = 0, reorder: float = 0,
+        bandwidth: float = 0, reorder: float = 0,
         user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     if not name.strip():
@@ -169,17 +164,59 @@ def create_profile(
     if db.query(ImpairmentProfile).filter(ImpairmentProfile.user_id == user.id, ImpairmentProfile.name == name).first():
         raise HTTPException(400, "Профиль с таким именем уже существует")
 
+    # bandwidth теперь в Мбит/с, конвертируем в Кбит/с для хранения
+    bandwidth_kbps = int(bandwidth * 1000) if bandwidth > 0 else 0
+
     profile = ImpairmentProfile(user_id=user.id, name=name.strip(), delay_ms=delay,
                                 loss_percent=loss, jitter_ms=jitter, duplication_percent=dup,
-                                bandwidth_kbps=bandwidth, reorder_percent=reorder)
+                                bandwidth_kbps=bandwidth_kbps, reorder_percent=reorder)
     db.add(profile)
     db.commit()
     db.refresh(profile)
 
     db.add(AuditLog(user_id=user.id, username=user.username, action="CREATE_PROFILE",
-                    details=f"Created '{name}' (delay={delay}ms, loss={loss}%, bw={bandwidth}kbps)"))
+                    details=f"Created '{name}' (delay={delay}ms, loss={loss}%, bw={bandwidth}Mbps)"))
     db.commit()
     return profile
+
+
+@app.post("/api/profiles/{profile_id}/activate")
+def activate_profile(profile_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    profile = db.query(ImpairmentProfile).filter(ImpairmentProfile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(404, "Профиль не найден")
+    if user.role != "admin" and profile.user_id != user.id:
+        raise HTTPException(403, "Доступ запрещён")
+
+    # Деактивируем все профили пользователя
+    db.query(ImpairmentProfile).filter(ImpairmentProfile.user_id == user.id).update(
+        {ImpairmentProfile.is_active: False})
+    profile.is_active = True
+    db.commit()
+
+    db.add(AuditLog(user_id=user.id, username=user.username, action="ACTIVATE_PROFILE",
+                    details=f"Activated '{profile.name}'"))
+    db.commit()
+
+    return {"status": "activated", "profile": profile.name}
+
+
+@app.post("/api/profiles/{profile_id}/deactivate")
+def deactivate_profile(profile_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    profile = db.query(ImpairmentProfile).filter(ImpairmentProfile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(404, "Профиль не найден")
+    if user.role != "admin" and profile.user_id != user.id:
+        raise HTTPException(403, "Доступ запрещён")
+
+    profile.is_active = False
+    db.commit()
+
+    db.add(AuditLog(user_id=user.id, username=user.username, action="DEACTIVATE_PROFILE",
+                    details=f"Deactivated '{profile.name}'"))
+    db.commit()
+
+    return {"status": "deactivated"}
 
 
 @app.delete("/api/profiles/{profile_id}")
@@ -208,6 +245,29 @@ def get_sessions(user: User = Depends(get_current_user), db: Session = Depends(g
         sessions = db.query(SessionModel).filter(SessionModel.user_id == user.id).order_by(
             SessionModel.started_at.desc()).limit(50).all()
     return [s.to_dict() for s in sessions]
+
+
+# ==================== ЖУРНАЛЫ АУДИТА ====================
+
+@app.get("/api/audit-logs")
+def get_audit_logs(user: User = Depends(get_current_user), db: Session = Depends(get_db), limit: int = 100):
+    if user.role == "admin":
+        logs = db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limit).all()
+    else:
+        logs = db.query(AuditLog).filter(AuditLog.user_id == user.id).order_by(AuditLog.timestamp.desc()).limit(
+            limit).all()
+
+    return [
+        {
+            "id": log.id,
+            "timestamp": str(log.timestamp),
+            "user_id": log.user_id,
+            "username": log.username,
+            "action": log.action,
+            "details": log.details
+        }
+        for log in logs
+    ]
 
 
 # ==================== ДВИЖОК ====================
