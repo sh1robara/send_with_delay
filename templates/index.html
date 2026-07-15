@@ -2,493 +2,568 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Network Impairment Emulator</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        .status-dot {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 5px;
-        }
-        .status-active { background-color: #10b981; }
-        .status-inactive { background-color: #6b7280; }
-    </style>
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body class="bg-gray-900 text-gray-100 p-8">
-    <h1 class="text-3xl font-bold mb-6 text-blue-400">📡 Network Impairment Emulator</h1>
+<body>
+    <div class="container">
+        <!-- ЭКРАН АВТОРИЗАЦИИ -->
+        <div id="auth-screen" class="auth-container">
+            <h1>🔐 Network Impairment Emulator</h1>
+            <div class="card auth-form">
+                <h2>Вход в систему</h2>
+                <input id="auth-username" type="text" placeholder="Логин" autocomplete="username">
+                <input id="auth-password" type="password" placeholder="Пароль" autocomplete="current-password">
+                <button class="btn btn-primary" style="width:100%" onclick="login()">Войти</button>
+                <p style="margin-top:1rem;font-size:0.875rem;color:#9ca3af;text-align:center">
+                    Нет аккаунта? <a href="#" onclick="showRegister()" style="color:#60a5fa">Зарегистрироваться</a>
+                </p>
+            </div>
+            <div id="register-form" class="card auth-form" style="display:none">
+                <h2>Регистрация</h2>
+                <input id="reg-username" type="text" placeholder="Логин (мин. 3 символа)">
+                <input id="reg-password" type="password" placeholder="Пароль (мин. 4 символа)">
+                <select id="reg-role">
+                    <option value="engineer">Инженер стенда</option>
+                    <option value="operator">Оператор испытаний</option>
+                    <option value="observer">Наблюдатель</option>
+                </select>
+                <button class="btn btn-success" style="width:100%" onclick="register()">Зарегистрироваться</button>
+                <button class="btn" style="width:100%;margin-top:0.5rem" onclick="showLogin()">Отмена</button>
+            </div>
+        </div>
 
-    <!-- Дашборд статистики -->
-    <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
-        <div class="bg-gray-800 p-4 rounded shadow">
-            <h3 class="text-gray-400 text-sm">Принято</h3>
-            <p id="stat-recv" class="text-2xl font-bold text-green-400">0</p>
-        </div>
-        <div class="bg-gray-800 p-4 rounded shadow">
-            <h3 class="text-gray-400 text-sm">Передано</h3>
-            <p id="stat-fwd" class="text-2xl font-bold text-blue-400">0</p>
-        </div>
-        <div class="bg-gray-800 p-4 rounded shadow">
-            <h3 class="text-gray-400 text-sm">Потеряно</h3>
-            <p id="stat-drop" class="text-2xl font-bold text-red-400">0</p>
-        </div>
-        <div class="bg-gray-800 p-4 rounded shadow">
-            <h3 class="text-gray-400 text-sm">Дублировано</h3>
-            <p id="stat-dup" class="text-2xl font-bold text-purple-400">0</p>
-        </div>
-        <div class="bg-gray-800 p-4 rounded shadow">
-            <h3 class="text-gray-400 text-sm">Ср. задержка (мс)</h3>
-            <p id="stat-delay" class="text-2xl font-bold text-yellow-400">0.0</p>
-        </div>
-        <div class="bg-gray-800 p-4 rounded shadow">
-            <h3 class="text-gray-400 text-sm">Смен маршрута</h3>
-            <p id="stat-routes" class="text-2xl font-bold text-cyan-400">0</p>
-        </div>
-    </div>
+        <!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
+        <div id="main-app" style="display:none">
+            <header class="header">
+                <h1>📡 Network Impairment Emulator</h1>
+                <div class="user-info">
+                    <span id="user-info"></span>
+                    <button class="btn btn-danger btn-sm" onclick="logout()">Выйти</button>
+                </div>
+            </header>
 
-    <!-- Управление движком -->
-    <div class="bg-gray-800 p-6 rounded shadow mb-8">
-        <h2 class="text-xl font-bold mb-4">️ Управление движком</h2>
-        <div class="flex gap-4 items-end flex-wrap">
-            <button onclick="startEngine()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded font-semibold">
-                ▶ Запустить
-            </button>
-            <button onclick="stopEngine()" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded font-semibold">
-                ⏹ Остановить
-            </button>
-            <span id="engine-status" class="text-sm text-gray-400 ml-4">
-                <span class="status-dot status-inactive"></span>Остановлен
-            </span>
+            <nav class="sidebar">
+                <button class="nav-btn active" onclick="showSection('dashboard')">📊 Дашборд</button>
+                <button class="nav-btn" onclick="showSection('routes')">🌐 Маршруты</button>
+                <button class="nav-btn" onclick="showSection('profiles')">🎯 Профили помех</button>
+                <button class="nav-btn" onclick="showSection('sessions')">📋 Сессии</button>
+                <button class="nav-btn" onclick="showSection('sniffer')">🔍 Снифер</button>
+                <button class="nav-btn" onclick="showSection('logs')"> Журналы</button>
+            </nav>
+
+            <main class="content">
+                <!-- ДАШБОРД -->
+                <section id="section-dashboard" class="section active">
+                    <h2>Главный дашборд</h2>
+
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Принято пакетов</div>
+                            <div class="stat-value green" id="stat-recv">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Передано</div>
+                            <div class="stat-value blue" id="stat-fwd">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Потеряно</div>
+                            <div class="stat-value red" id="stat-drop">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Дублировано</div>
+                            <div class="stat-value purple" id="stat-dup">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Ср. задержка (мс)</div>
+                            <div class="stat-value yellow" id="stat-delay">0.0</div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3>⚙️ Управление движком</h3>
+                        <div class="form-row">
+                            <button class="btn btn-success" onclick="startEngine()">▶ Запустить</button>
+                            <button class="btn btn-danger" onclick="stopEngine()">⏹ Остановить</button>
+                            <span id="engine-status" class="status-badge">
+                                <span class="status-dot status-inactive"></span>Остановлен
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3>🔍 Снифер пакетов (live)</h3>
+                        <div class="table-container sniffer-table">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Время</th>
+                                        <th>Маршрут</th>
+                                        <th>Порт</th>
+                                        <th>Длина</th>
+                                        <th>Источник</th>
+                                        <th>Действие</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sniffer-table"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- МАРШРУТЫ -->
+                <section id="section-routes" class="section">
+                    <h2>Управление маршрутами</h2>
+
+                    <div class="card">
+                        <h3>➕ Создать маршрут</h3>
+                        <div class="form-grid">
+                            <input id="r-name" type="text" placeholder="Имя маршрута">
+                            <input id="r-listen-port" type="number" placeholder="Порт приёма" value="5005" min="1" max="65535">
+                            <input id="r-forward-ip" type="text" placeholder="IP получателя" value="127.0.0.1">
+                            <input id="r-forward-port" type="number" placeholder="Порт получателя" value="5006" min="1" max="65535">
+                        </div>
+                        <button class="btn btn-primary" onclick="createRoute()">💾 Сохранить маршрут</button>
+                    </div>
+
+                    <div class="card">
+                        <h3> Список маршрутов</h3>
+                        <div id="routes-list"></div>
+                    </div>
+                </section>
+
+                <!-- ПРОФИЛИ -->
+                <section id="section-profiles" class="section">
+                    <h2>Профили помех</h2>
+
+                    <div class="card">
+                        <h3>➕ Создать профиль</h3>
+                        <div class="form-grid">
+                            <input id="p-name" type="text" placeholder="Имя профиля">
+                            <input id="p-delay" type="number" placeholder="Задержка (мс)" min="0" value="0">
+                            <input id="p-loss" type="number" placeholder="Потери (%)" min="0" max="100" value="0">
+                            <input id="p-jitter" type="number" placeholder="Джиттер (мс)" min="0" value="0">
+                            <input id="p-dup" type="number" placeholder="Дубликат (%)" min="0" max="100" value="0">
+                            <input id="p-bandwidth" type="number" placeholder="Макс. скорость (Кбит/с)" min="0" value="0">
+                        </div>
+                        <button class="btn btn-primary" onclick="createProfile()"> Сохранить профиль</button>
+                    </div>
+
+                    <div class="card">
+                        <h3>📋 Список профилей</h3>
+                        <div id="profiles-list"></div>
+                    </div>
+                </section>
+
+                <!-- СЕССИИ -->
+                <section id="section-sessions" class="section">
+                    <h2>История сессий</h2>
+                    <div class="card">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Время запуска</th>
+                                        <th>Время завершения</th>
+                                        <th>Маршрут</th>
+                                        <th>Профиль</th>
+                                        <th>Принято</th>
+                                        <th>Передано</th>
+                                        <th>Потеряно</th>
+                                        <th>Дублировано</th>
+                                        <th>Ср. задержка (мс)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sessions-table"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- СНИФЕР -->
+                <section id="section-sniffer" class="section">
+                    <h2>Снифер пакетов</h2>
+                    <div class="card">
+                        <div class="table-container sniffer-table">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Время</th>
+                                        <th>Маршрут</th>
+                                        <th>Порт</th>
+                                        <th>Длина</th>
+                                        <th>Источник</th>
+                                        <th>Действие</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sniffer-table-full"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ЖУРНАЛЫ -->
+                <section id="section-logs" class="section">
+                    <h2>Журналы аудита</h2>
+                    <div class="card">
+                        <p>Журналы аудита доступны в разделе API или через экспорт данных.</p>
+                    </div>
+                </section>
+            </main>
         </div>
-        <div id="current-route-info" class="mt-4 text-sm text-gray-300">
-            Текущий маршрут: не задан
+
+        <!-- Уведомления -->
+        <div id="notification" class="notification hidden">
+            <p id="notification-text"></p>
         </div>
-    </div>
-
-    <!-- Активный профиль -->
-    <div class="bg-gray-800 p-6 rounded shadow mb-8">
-        <h2 class="text-xl font-bold mb-4">🎯 Активный профиль помех</h2>
-        <div id="active-profile-info" class="text-gray-300">
-            Профиль не выбран
-        </div>
-    </div>
-
-    <!-- Управление маршрутами -->
-    <div class="bg-gray-800 p-6 rounded shadow mb-8">
-        <h2 class="text-xl font-bold mb-4"> Управление маршрутами</h2>
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
-            <input id="r-name" type="text" placeholder="Имя маршрута" class="bg-gray-700 p-2 rounded">
-            <input id="r-listen-ip" type="text" placeholder="IP приёма" value="0.0.0.0" class="bg-gray-700 p-2 rounded">
-            <input id="r-listen-port" type="number" placeholder="Порт приёма" value="5005" class="bg-gray-700 p-2 rounded">
-            <input id="r-forward-ip" type="text" placeholder="IP отправки" value="127.0.0.1" class="bg-gray-700 p-2 rounded">
-            <input id="r-forward-port" type="number" placeholder="Порт отправки" value="5006" class="bg-gray-700 p-2 rounded">
-        </div>
-        <button onclick="createRoute()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-semibold">
-            💾 Сохранить маршрут
-        </button>
-
-        <h3 class="mt-6 mb-2 font-bold"> Маршруты:</h3>
-        <ul id="routes-list" class="list-none text-gray-300"></ul>
-
-        <div class="mt-4 p-3 bg-yellow-900 bg-opacity-30 border border-yellow-700 rounded text-sm text-yellow-300">
-            ️ <strong>Внимание:</strong> Смена активного маршрута во время работы движка приведёт к пересозданию сокета и потере пакетов в очереди.
-        </div>
-    </div>
-
-    <!-- Создание профиля помех -->
-    <div class="bg-gray-800 p-6 rounded shadow">
-        <h2 class="text-xl font-bold mb-4">➕ Создать профиль помех</h2>
-        <div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4">
-            <input id="p-name" type="text" placeholder="Имя профиля" class="bg-gray-700 p-2 rounded">
-            <input id="p-delay" type="number" placeholder="Задержка (мс)" min="0" class="bg-gray-700 p-2 rounded">
-            <input id="p-loss" type="number" placeholder="Потери (%)" min="0" max="100" class="bg-gray-700 p-2 rounded">
-            <input id="p-jitter" type="number" placeholder="Джиттер (мс)" min="0" class="bg-gray-700 p-2 rounded">
-            <input id="p-dup" type="number" placeholder="Дубликат (%)" min="0" max="100" class="bg-gray-700 p-2 rounded">
-            <input id="p-reorder" type="number" placeholder="Перестановка (%)" min="0" max="100" class="bg-gray-700 p-2 rounded">
-        </div>
-        <button onclick="createProfile()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-semibold">
-            💾 Сохранить профиль
-        </button>
-
-        <h3 class="mt-6 mb-2 font-bold"> Профили:</h3>
-        <ul id="profiles-list" class="list-none text-gray-300"></ul>
-    </div>
-
-    <!-- Уведомления -->
-    <div id="notification" class="fixed top-4 right-4 hidden bg-gray-800 border-l-4 p-4 rounded shadow-lg max-w-md" role="alert">
-        <p id="notification-text" class="font-bold"></p>
     </div>
 
     <script>
-        // ==================== WebSocket ====================
+        // ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
+        let authToken = localStorage.getItem('auth_token');
+        let currentUser = null;
         let ws = null;
-        let wsReconnectTimer = null;
 
+        // ==================== API ВЫЗОВЫ ====================
+        async function apiCall(url, options = {}) {
+            if (authToken) {
+                options.headers = options.headers || {};
+                options.headers['Authorization'] = `Bearer ${authToken}`;
+            }
+            const response = await fetch(url, options);
+            if (response.status === 401) {
+                logout();
+                throw new Error('Сессия истекла');
+            }
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({detail: 'Ошибка'}));
+                throw new Error(error.detail || 'Ошибка');
+            }
+            return response.json();
+        }
+
+        // ==================== АВТОРИЗАЦИЯ ====================
+        async function login() {
+            const username = document.getElementById('auth-username').value.trim();
+            const password = document.getElementById('auth-password').value;
+            if (!username || !password) {
+                showNotification('Введите логин и пароль', 'error');
+                return;
+            }
+            try {
+                const data = await apiCall(`/api/auth/login?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`, {method: 'POST'});
+                authToken = data.access_token;
+                localStorage.setItem('auth_token', authToken);
+                currentUser = data.user;
+                showMainApp();
+                showNotification(`Добро пожаловать, ${username}!`, 'success');
+            } catch (e) {
+                showNotification(e.message, 'error');
+            }
+        }
+
+        async function register() {
+            const username = document.getElementById('reg-username').value.trim();
+            const password = document.getElementById('reg-password').value;
+            const role = document.getElementById('reg-role').value;
+            try {
+                await apiCall(`/api/auth/register?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&role=${role}`, {method: 'POST'});
+                showNotification('Регистрация успешна! Войдите в систему.', 'success');
+                showLogin();
+            } catch (e) {
+                showNotification(e.message, 'error');
+            }
+        }
+
+        function logout() {
+            authToken = null;
+            localStorage.removeItem('auth_token');
+            currentUser = null;
+            if (ws) ws.close();
+            showLogin();
+        }
+
+        function showLogin() {
+            document.getElementById('auth-screen').style.display = 'block';
+            document.getElementById('main-app').style.display = 'none';
+            document.getElementById('register-form').style.display = 'none';
+        }
+
+        function showRegister() {
+            document.getElementById('register-form').style.display = 'block';
+        }
+
+        async function showMainApp() {
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('main-app').style.display = 'block';
+            document.getElementById('user-info').textContent = `${currentUser.username} (${currentUser.role})`;
+            connectWebSocket();
+            loadRoutes();
+            loadProfiles();
+            loadSessions();
+        }
+
+        // ==================== WEBSOCKET ====================
         function connectWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${window.location.host}/ws/stats`);
+            if (ws) ws.close();
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${location.host}/ws/stats`);
 
-            ws.onopen = function() {
-                console.log('✅ WebSocket подключен');
-                if (wsReconnectTimer) {
-                    clearTimeout(wsReconnectTimer);
-                    wsReconnectTimer = null;
-                }
+            ws.onopen = () => console.log('✅ WebSocket подключен');
+
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                updateDashboard(data);
             };
 
-            ws.onmessage = function(event) {
-                try {
-                    const data = JSON.parse(event.data);
-                    updateStats(data);
-                } catch (e) {
-                    console.error('Ошибка парсинга WebSocket:', e);
-                }
-            };
+            ws.onerror = (error) => console.error('❌ WebSocket ошибка:', error);
 
-            ws.onerror = function(error) {
-                console.error('❌ WebSocket ошибка:', error);
-            };
-
-            ws.onclose = function() {
-                console.log('🔌 WebSocket отключен. Переподключение через 3 сек...');
-                if (!wsReconnectTimer) {
-                    wsReconnectTimer = setTimeout(connectWebSocket, 3000);
-                }
+            ws.onclose = () => {
+                console.log(' WebSocket отключен. Переподключение...');
+                setTimeout(connectWebSocket, 3000);
             };
         }
 
-        function updateStats(data) {
+        function updateDashboard(data) {
             document.getElementById('stat-recv').innerText = data.stats.received;
             document.getElementById('stat-fwd').innerText = data.stats.forwarded;
             document.getElementById('stat-drop').innerText = data.stats.dropped;
             document.getElementById('stat-dup').innerText = data.stats.duplicated || 0;
             document.getElementById('stat-delay').innerText = (data.stats.avg_delay || 0).toFixed(2);
-            document.getElementById('stat-routes').innerText = data.stats.route_changes || 0;
 
             const statusEl = document.getElementById('engine-status');
             if (data.engine_running) {
-                statusEl.innerHTML = `<span class="status-dot status-active"></span>✅ Работает`;
-                statusEl.className = "text-sm text-green-400 ml-4 font-bold";
+                statusEl.innerHTML = '<span class="status-dot status-active"></span>✅ Работает';
+                statusEl.className = 'status-badge status-running';
             } else {
-                statusEl.innerHTML = `<span class="status-dot status-inactive"></span>⛔ Остановлен`;
-                statusEl.className = "text-sm text-red-400 ml-4 font-bold";
+                statusEl.innerHTML = '<span class="status-dot status-inactive"></span>⛔ Остановлен';
+                statusEl.className = 'status-badge';
             }
 
-            // Обновляем информацию о текущем маршруте
-            document.getElementById('current-route-info').innerHTML =
-                `Текущий маршрут: <strong>${data.nic_in}</strong> → <strong>${data.nic_out}</strong> ` +
-                `(активный: ${data.active_route || 'не задан'})`;
+            if (data.sniffer && data.sniffer.length > 0) {
+                updateSnifferTable(data.sniffer);
+            }
         }
 
-        // ==================== Уведомления ====================
+        function updateSnifferTable(events) {
+            const tbody = document.getElementById('sniffer-table');
+            const tbodyFull = document.getElementById('sniffer-table-full');
+            const html = events.slice().reverse().map(ev => `
+                <tr class="${ev.action}">
+                    <td>${ev.timestamp}</td>
+                    <td>${ev.route_name}</td>
+                    <td>${ev.port}</td>
+                    <td>${ev.length} Б</td>
+                    <td>${ev.src}</td>
+                    <td>${getActionText(ev.action)}</td>
+                </tr>
+            `).join('');
+
+            if (tbody) tbody.innerHTML = html;
+            if (tbodyFull) tbodyFull.innerHTML = html;
+        }
+
+        function getActionText(action) {
+            switch(action) {
+                case 'received': return '📥 Принят';
+                case 'dropped': return '❌ Потерян';
+                case 'forwarded': return '📤 Отправлен';
+                default: return action;
+            }
+        }
+
+        // ==================== УВЕДОМЛЕНИЯ ====================
         function showNotification(message, type = 'info') {
             const notif = document.getElementById('notification');
-            const text = document.getElementById('notification-text');
-
-            const colors = {
-                'success': 'border-green-500 text-green-400',
-                'error': 'border-red-500 text-red-400',
-                'info': 'border-blue-500 text-blue-400',
-                'warning': 'border-yellow-500 text-yellow-400'
-            };
-
-            notif.className = `fixed top-4 right-4 ${colors[type]} bg-gray-800 border-l-4 p-4 rounded shadow-lg max-w-md`;
-            text.innerText = message;
-            notif.classList.remove('hidden');
-
+            document.getElementById('notification-text').innerText = message;
+            notif.className = `notification ${type}`;
             setTimeout(() => notif.classList.add('hidden'), 3000);
         }
 
-        // ==================== API функции: МАРШРУТЫ ====================
+        // ==================== НАВИГАЦИЯ ====================
+        function showSection(sectionName) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+
+            document.getElementById(`section-${sectionName}`).classList.add('active');
+            event.target.classList.add('active');
+
+            if (sectionName === 'sessions') loadSessions();
+        }
+
+        // ==================== МАРШРУТЫ ====================
         async function createRoute() {
             const name = document.getElementById('r-name').value.trim();
-            const listenIp = document.getElementById('r-listen-ip').value.trim() || '0.0.0.0';
-            const listenPort = parseInt(document.getElementById('r-listen-port').value) || 5005;
+            const listenPort = document.getElementById('r-listen-port').value || 5005;
             const forwardIp = document.getElementById('r-forward-ip').value.trim() || '127.0.0.1';
-            const forwardPort = parseInt(document.getElementById('r-forward-port').value) || 5006;
-
-            if (!name) {
-                showNotification('❌ Введите имя маршрута', 'error');
-                return;
-            }
-
-            if (listenPort < 1 || listenPort > 65535 || forwardPort < 1 || forwardPort > 65535) {
-                showNotification('❌ Порты должны быть от 1 до 65535', 'error');
-                return;
-            }
-
+            const forwardPort = document.getElementById('r-forward-port').value || 5006;
+            if (!name) { showNotification('Введите имя маршрута', 'error'); return; }
             try {
-                const params = new URLSearchParams({
-                    name: name,
-                    listen_ip: listenIp,
-                    listen_port: listenPort,
-                    forward_ip: forwardIp,
-                    forward_port: forwardPort
-                });
-
-                const response = await fetch(`/api/routes?${params}`, {method: 'POST'});
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Ошибка создания');
-                }
-
-                showNotification(`✅ Маршрут "${name}" создан`, 'success');
-
-                // Очистка формы
+                await apiCall(`/api/routes?name=${encodeURIComponent(name)}&listen_port=${listenPort}&forward_ip=${encodeURIComponent(forwardIp)}&forward_port=${forwardPort}`, {method: 'POST'});
+                showNotification(`Маршрут "${name}" создан`, 'success');
                 document.getElementById('r-name').value = '';
-
                 loadRoutes();
-            } catch (error) {
-                showNotification(' ' + error.message, 'error');
-            }
+            } catch (e) { showNotification(e.message, 'error'); }
         }
 
         async function loadRoutes() {
             try {
-                const res = await fetch('/api/routes');
-                const routes = await res.json();
+                const routes = await apiCall('/api/routes');
                 const list = document.getElementById('routes-list');
-
                 if (routes.length === 0) {
-                    list.innerHTML = '<li class="text-gray-500 italic">Нет маршрутов</li>';
+                    list.innerHTML = '<p style="color:#9ca3af;font-style:italic">Нет маршрутов</p>';
                     return;
                 }
-
                 list.innerHTML = routes.map(r => `
-                    <li class="flex items-center gap-2 mb-2 p-2 bg-gray-700 rounded">
+                    <div class="list-item">
                         <span class="status-dot ${r.is_active ? 'status-active' : 'status-inactive'}"></span>
-                        <span class="flex-1">
-                            <strong>${r.name}</strong> |
-                            ${r.listen_ip}:${r.listen_port} → ${r.forward_ip}:${r.forward_port}
-                        </span>
-                        ${!r.is_active ?
-                            `<button onclick="activateRoute(${r.id})" class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded text-xs">
-                                Активировать
-                            </button>` :
-                            `<span class="text-green-400 text-xs font-bold"> АКТИВЕН</span>`
-                        }
-                        <button onclick="deleteRoute(${r.id}, '${r.name}')" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-xs">
-                            🗑
+                        <div class="flex-1">
+                            <strong>${r.name}</strong><br>
+                            <small>Порт ${r.listen_port} → ${r.forward_ip}:${r.forward_port}</small>
+                        </div>
+                        <button class="btn btn-warning btn-sm" onclick="activateRoute(${r.id})">
+                            ${r.is_active ? '✓ Активен' : 'Активировать'}
                         </button>
-                    </li>
+                        <button class="btn btn-danger btn-sm" onclick="deleteRoute(${r.id}, '${r.name}')">🗑</button>
+                    </div>
                 `).join('');
-            } catch (error) {
-                showNotification('❌ Ошибка загрузки маршрутов', 'error');
-            }
+            } catch (e) { showNotification(e.message, 'error'); }
         }
 
         async function activateRoute(id) {
             try {
-                const response = await fetch(`/api/routes/${id}/activate`, {method: 'POST'});
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Ошибка активации');
-                }
-                showNotification('✅ Маршрут активирован', 'success');
+                await apiCall(`/api/routes/${id}/activate`, {method: 'POST'});
+                showNotification('Маршрут активирован', 'success');
                 loadRoutes();
-            } catch (error) {
-                showNotification('❌ ' + error.message, 'error');
-            }
+            } catch (e) { showNotification(e.message, 'error'); }
         }
 
         async function deleteRoute(id, name) {
             if (!confirm(`Удалить маршрут "${name}"?`)) return;
-
             try {
-                const response = await fetch(`/api/routes/${id}`, {method: 'DELETE'});
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Ошибка удаления');
-                }
-                showNotification(`🗑 Маршрут "${name}" удален`, 'success');
+                await apiCall(`/api/routes/${id}`, {method: 'DELETE'});
+                showNotification(`Маршрут "${name}" удалён`, 'success');
                 loadRoutes();
-            } catch (error) {
-                showNotification('❌ ' + error.message, 'error');
-            }
+            } catch (e) { showNotification(e.message, 'error'); }
         }
 
-        // ==================== API функции: ДВИЖОК ====================
-        async function startEngine() {
-            try {
-                const response = await fetch('/api/engine/start', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({})
-                });
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Ошибка запуска');
-                }
-
-                showNotification('✅ Движок запущен', 'success');
-            } catch (error) {
-                showNotification('❌ ' + error.message, 'error');
-            }
-        }
-
-        async function stopEngine() {
-            try {
-                const response = await fetch('/api/engine/stop', {method: 'POST'});
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Ошибка остановки');
-                }
-                showNotification(' Движок остановлен', 'success');
-            } catch (error) {
-                showNotification('❌ ' + error.message, 'error');
-            }
-        }
-
-        // ==================== API функции: ПРОФИЛИ ====================
+        // ==================== ПРОФИЛИ ====================
         async function createProfile() {
             const name = document.getElementById('p-name').value.trim();
             const delay = document.getElementById('p-delay').value || 0;
             const loss = document.getElementById('p-loss').value || 0;
             const jitter = document.getElementById('p-jitter').value || 0;
             const dup = document.getElementById('p-dup').value || 0;
-            const reorder = document.getElementById('p-reorder').value || 0;
-
-            if (!name) {
-                showNotification('❌ Введите имя профиля', 'error');
-                return;
-            }
-
+            const bandwidth = document.getElementById('p-bandwidth').value || 0;
+            if (!name) { showNotification('Введите имя профиля', 'error'); return; }
             try {
-                const params = new URLSearchParams({
-                    name: name,
-                    delay: delay,
-                    loss: loss,
-                    jitter: jitter,
-                    dup: dup,
-                    reorder: reorder
-                });
-
-                const response = await fetch(`/api/profiles?${params}`, {method: 'POST'});
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Ошибка создания');
-                }
-
-                showNotification(`✅ Профиль "${name}" создан`, 'success');
-
-                document.getElementById('p-name').value = '';
-                document.getElementById('p-delay').value = '';
-                document.getElementById('p-loss').value = '';
-                document.getElementById('p-jitter').value = '';
-                document.getElementById('p-dup').value = '';
-                document.getElementById('p-reorder').value = '';
-
+                await apiCall(`/api/profiles?name=${encodeURIComponent(name)}&delay=${delay}&loss=${loss}&jitter=${jitter}&dup=${dup}&bandwidth=${bandwidth}`, {method: 'POST'});
+                showNotification(`Профиль "${name}" создан`, 'success');
+                ['p-name','p-delay','p-loss','p-jitter','p-dup','p-bandwidth'].forEach(id => document.getElementById(id).value = id === 'p-name' ? '' : '0');
                 loadProfiles();
-            } catch (error) {
-                showNotification('❌ ' + error.message, 'error');
-            }
+            } catch (e) { showNotification(e.message, 'error'); }
         }
 
         async function loadProfiles() {
             try {
-                const res = await fetch('/api/profiles');
-                const profiles = await res.json();
+                const profiles = await apiCall('/api/profiles');
                 const list = document.getElementById('profiles-list');
-
                 if (profiles.length === 0) {
-                    list.innerHTML = '<li class="text-gray-500 italic">Нет профилей</li>';
+                    list.innerHTML = '<p style="color:#9ca3af;font-style:italic">Нет профилей</p>';
                     return;
                 }
-
                 list.innerHTML = profiles.map(p => `
-                    <li class="flex items-center gap-2 mb-2 p-2 bg-gray-700 rounded">
+                    <div class="list-item">
                         <span class="status-dot ${p.is_active ? 'status-active' : 'status-inactive'}"></span>
-                        <span class="flex-1">
-                            <strong>${p.name}</strong> |
-                            Delay: ${p.delay_ms}ms |
-                            Loss: ${p.loss_percent}% |
-                            Jitter: ${p.jitter_ms}ms |
-                            Dup: ${p.duplication_percent}%
-                        </span>
-                        ${!p.is_active ?
-                            `<button onclick="activateProfile(${p.id})" class="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 rounded text-xs">
-                                Активировать
-                            </button>` :
-                            `<span class="text-green-400 text-xs font-bold">🟢 АКТИВЕН</span>`
-                        }
-                        <button onclick="deleteProfile(${p.id}, '${p.name}')" class="bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-xs">
-                            🗑
+                        <div class="flex-1">
+                            <strong>${p.name}</strong><br>
+                            <small>Delay: ${p.delay_ms}ms | Loss: ${p.loss_percent}% | BW: ${p.bandwidth_kbps || '∞'} kbps</small>
+                        </div>
+                        <button class="btn btn-warning btn-sm" onclick="activateProfile(${p.id})">
+                            ${p.is_active ? '✓ Активен' : 'Активировать'}
                         </button>
-                    </li>
+                        <button class="btn btn-danger btn-sm" onclick="deleteProfile(${p.id}, '${p.name}')">🗑</button>
+                    </div>
                 `).join('');
-            } catch (error) {
-                showNotification('❌ Ошибка загрузки профилей', 'error');
-            }
+            } catch (e) { showNotification(e.message, 'error'); }
         }
 
         async function activateProfile(id) {
             try {
-                const response = await fetch(`/api/profiles/${id}/activate`, {method: 'POST'});
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Ошибка активации');
+                const profiles = await apiCall('/api/profiles');
+                for (const p of profiles) {
+                    if (p.id === id && !p.is_active) {
+                        await apiCall(`/api/profiles/${p.id}/activate`, {method: 'POST'});
+                    } else if (p.is_active) {
+                        await apiCall(`/api/profiles/${p.id}/deactivate`, {method: 'POST'});
+                    }
                 }
-                showNotification('✅ Профиль активирован', 'success');
+                showNotification('Профиль активирован', 'success');
                 loadProfiles();
-                loadActiveProfile();
-            } catch (error) {
-                showNotification('❌ ' + error.message, 'error');
-            }
+            } catch (e) { showNotification(e.message, 'error'); }
         }
 
         async function deleteProfile(id, name) {
             if (!confirm(`Удалить профиль "${name}"?`)) return;
-
             try {
-                const response = await fetch(`/api/profiles/${id}`, {method: 'DELETE'});
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Ошибка удаления');
-                }
-                showNotification(`🗑 Профиль "${name}" удален`, 'success');
+                await apiCall(`/api/profiles/${id}`, {method: 'DELETE'});
+                showNotification(`Профиль "${name}" удалён`, 'success');
                 loadProfiles();
-            } catch (error) {
-                showNotification('❌ ' + error.message, 'error');
-            }
+            } catch (e) { showNotification(e.message, 'error'); }
         }
 
-        async function loadActiveProfile() {
+        // ==================== СЕССИИ ====================
+        async function loadSessions() {
             try {
-                const res = await fetch('/api/active_profile');
-                const profile = await res.json();
-                const info = document.getElementById('active-profile-info');
-
-                if (profile) {
-                    info.innerHTML = `
-                        <div class="bg-green-900 bg-opacity-30 p-4 rounded border border-green-700">
-                            <h3 class="text-green-400 font-bold text-lg">🟢 ${profile.name}</h3>
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2 text-sm">
-                                <div>Задержка: <strong>${profile.delay_ms} мс</strong></div>
-                                <div>Потери: <strong>${profile.loss_percent}%</strong></div>
-                                <div>Джиттер: <strong>${profile.jitter_ms} мс</strong></div>
-                                <div>Дублирование: <strong>${profile.duplication_percent}%</strong></div>
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    info.innerHTML = '<div class="text-gray-500 italic">Профиль не выбран</div>';
+                const sessions = await apiCall('/api/sessions');
+                const tbody = document.getElementById('sessions-table');
+                if (sessions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#9ca3af">Нет сессий</td></tr>';
+                    return;
                 }
-            } catch (error) {
-                console.error('Ошибка загрузки активного профиля:', error);
-            }
+                tbody.innerHTML = sessions.map(s => `
+                    <tr>
+                        <td>${s.started_at ? s.started_at.replace('T', ' ').substring(0, 19) : '-'}</td>
+                        <td>${s.ended_at ? s.ended_at.replace('T', ' ').substring(0, 19) : 'активна'}</td>
+                        <td>${s.route_name || '-'}</td>
+                        <td>${s.profile_name || 'без профиля'}</td>
+                        <td>${s.received}</td>
+                        <td>${s.forwarded}</td>
+                        <td>${s.dropped}</td>
+                        <td>${s.duplicated}</td>
+                        <td>${s.avg_delay.toFixed(2)}</td>
+                    </tr>
+                `).join('');
+            } catch (e) { console.error(e); }
         }
 
-        // ==================== Инициализация ====================
-        connectWebSocket();
-        loadRoutes();
-        loadProfiles();
-        loadActiveProfile();
+        // ==================== ДВИЖОК ====================
+        async function startEngine() {
+            try {
+                await apiCall('/api/engine/start', {method: 'POST'});
+                showNotification('Движок запущен', 'success');
+                setTimeout(loadSessions, 1000);
+            } catch (e) { showNotification(e.message, 'error'); }
+        }
 
-        setInterval(loadActiveProfile, 5000);
+        async function stopEngine() {
+            try {
+                await apiCall('/api/engine/stop', {method: 'POST'});
+                showNotification('Движок остановлен', 'success');
+                setTimeout(loadSessions, 1000);
+            } catch (e) { showNotification(e.message, 'error'); }
+        }
+
+        // ==================== ИНИЦИАЛИЗАЦИЯ ====================
+        if (authToken) {
+            apiCall('/api/auth/me').then(user => {
+                currentUser = user;
+                showMainApp();
+            }).catch(() => showLogin());
+        } else {
+            showLogin();
+        }
     </script>
 </body>
 </html>

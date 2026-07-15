@@ -37,65 +37,26 @@ def parse_args():
         """
     )
 
-    parser.add_argument(
-        '--ip', '-i',
-        default='127.0.0.1',
-        help='IP-адрес получателя (по умолчанию: 127.0.0.1)'
-    )
-
-    parser.add_argument(
-        '--port', '-p',
-        type=int,
-        default=5005,
-        help='Порт получателя (по умолчанию: 5005)'
-    )
-
-    parser.add_argument(
-        '--count', '-c',
-        type=int,
-        default=100,
-        help='Количество пакетов для отправки (по умолчанию: 100)'
-    )
-
-    parser.add_argument(
-        '--time', '-t',
-        type=float,
-        default=None,
-        help='Время отправки в секундах (взаимоисключается с --count)'
-    )
-
-    parser.add_argument(
-        '--rate', '-r',
-        type=float,
-        default=10.0,
-        help='Скорость отправки пакетов в секунду (по умолчанию: 10)'
-    )
-
-    parser.add_argument(
-        '--size', '-s',
-        type=int,
-        default=64,
-        help='Размер полезной нагрузки в байтах (по умолчанию: 64)'
-    )
-
-    parser.add_argument(
-        '--prefix',
-        default='TEST_PACKET',
-        help='Префикс пакета (по умолчанию: TEST_PACKET)'
-    )
+    parser.add_argument('--ip', '-i', default='127.0.0.1', help='IP-адрес получателя (по умолчанию: 127.0.0.1)')
+    parser.add_argument('--port', '-p', type=int, default=5005, help='Порт получателя (по умолчанию: 5005)')
+    parser.add_argument('--count', '-c', type=int, default=100,
+                        help='Количество пакетов для отправки (по умолчанию: 100)')
+    parser.add_argument('--time', '-t', type=float, default=None,
+                        help='Время отправки в секундах (взаимоисключается с --count)')
+    parser.add_argument('--rate', '-r', type=float, default=10.0,
+                        help='Скорость отправки пакетов в секунду (по умолчанию: 10)')
+    parser.add_argument('--size', '-s', type=int, default=64,
+                        help='Размер полезной нагрузки в байтах (по умолчанию: 64)')
+    parser.add_argument('--prefix', default='TEST_PACKET', help='Префикс пакета (по умолчанию: TEST_PACKET)')
 
     args = parser.parse_args()
 
-    # Валидация
     if args.time is not None and args.count != 100:
         parser.error('Аргументы --time и --count нельзя использовать одновременно')
-
     if args.rate <= 0:
         parser.error('Скорость отправки должна быть больше 0')
-
     if args.size < 1 or args.size > 65507:
         parser.error('Размер пакета должен быть от 1 до 65507 байт')
-
     if args.port < 1 or args.port > 65535:
         parser.error('Порт должен быть от 1 до 65535')
 
@@ -121,13 +82,11 @@ def send_packets(args):
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     interval = 1.0 / args.rate
-
     sent_count = 0
     start_time = time.time()
 
     try:
         if args.time is not None:
-            # Режим отправки по времени
             print(f"[*] Отправка пакетов в течение {args.time} секунд...")
             print(f"[*] Нажмите Ctrl+C для остановки")
             print()
@@ -135,15 +94,12 @@ def send_packets(args):
             while (time.time() - start_time) < args.time:
                 timestamp = f"{time.time():.6f}_{random.randint(1000, 9999)}_{sent_count}"
                 payload = f"{args.prefix}_{timestamp}".encode()
-
-                # Дополняем до нужного размера
                 if len(payload) < args.size:
                     payload = payload + b'X' * (args.size - len(payload))
 
                 sock.sendto(payload, (args.ip, args.port))
                 sent_count += 1
 
-                # Вывод прогресса каждые 10 пакетов
                 if sent_count % 10 == 0:
                     elapsed = time.time() - start_time
                     print(f"[+] Отправлено: {sent_count:5d} | Время: {elapsed:7.1f} сек", end='\r')
@@ -151,22 +107,18 @@ def send_packets(args):
                 time.sleep(interval)
 
         else:
-            # Режим отправки по количеству
             print(f"[*] Отправка {args.count} пакетов...")
             print()
 
             for i in range(args.count):
                 timestamp = f"{time.time():.6f}_{random.randint(1000, 9999)}_{i}"
                 payload = f"{args.prefix}_{timestamp}".encode()
-
-                # Дополняем до нужного размера
                 if len(payload) < args.size:
                     payload = payload + b'X' * (args.size - len(payload))
 
                 sock.sendto(payload, (args.ip, args.port))
                 sent_count += 1
 
-                # Вывод прогресса
                 if (i + 1) % 10 == 0 or (i + 1) == args.count:
                     print(f"[+] Пакет {i + 1:4d}/{args.count} отправлен")
 
@@ -179,7 +131,6 @@ def send_packets(args):
     finally:
         sock.close()
 
-    # Итоговая статистика
     elapsed = time.time() - start_time
     actual_rate = sent_count / elapsed if elapsed > 0 else 0
 

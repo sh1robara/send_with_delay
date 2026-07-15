@@ -1,299 +1,267 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import asyncio
 import logging
+from datetime import datetime, timezone
 
-from db import get_db, ImpairmentProfile, AuditLog, RoutingConfig
+from db import get_db, User, RoutingConfig, ImpairmentProfile, Session as SessionModel, AuditLog
 from engine import packet_engine
+from auth import (
+    get_password_hash, verify_password, create_access_token,
+    get_current_user, require_admin
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Network Impairment Emulator")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
-# ==================== API МАРШРУТОВ ====================
+# ==================== АВТОРИЗАЦИЯ ====================
+
+@app.post("/api/auth/register")
+def register(username: str, password: str, role: str = "engineer", db: Session = Depends(get_db)):
+    if len(username) < 3 or len(password) < 4:
+        raise HTTPException(400, "Логин минимум 3 символа, пароль минимум 4")
+    if db.query(User).filter(User.username == username).first():
+        raise HTTPException(400, "Пользователь уже существует")
+
+    user = User(username=username, hashed_password=get_password_hash(password), role=role)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    db.add(AuditLog(user_id=user.id, username=username, action="REGISTER", details=f"User '{username}' registered"))
+    db.commit()
+
+    return {"id": user.id, "username": user.username, "role": user.role}
+
+
+@app.post("/api/auth/login")
+def login(username: str, password: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == username).first()
+    if not user or not verify_password(password, user.hashed_password):
+        raise HTTPException(401, "Неверный логин или пароль")
+    if not user.is_active:
+        raise HTTPException(403, "Пользователь заблокирован")
+
+    token = create_access_token({"sub": user.username})
+    db.add(AuditLog(user_id=user.id, username=username, action="LOGIN", details="User logged in"))
+    db.commit()
+
+    return {"access_token": token, "user": {"id": user.id, "username": user.username, "role": user.role}}
+
+
+@app.get("/api/auth/me")
+def get_me(user: User = Depends(get_current_user)):
+    return {"id": user.id, "username": user.username, "role": user.role}
+
+
+# ==================== МАРШРУТЫ ====================
 
 @app.get("/api/routes")
-def get_routes(db: Session = Depends(get_db)):
-    """Получение списка всех маршрутов"""
-    routes = db.query(RoutingConfig).all()
-    return [r.to_dict() for r in routes]
+def get_routes(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role == "admin":
+        return [r.to_dict() for r in db.query(RoutingConfig).all()]
+    return [r.to_dict() for r in db.query(RoutingConfig).filter(RoutingConfig.user_id == user.id).all()]
 
 
 @app.post("/api/routes")
 def create_route(
-        name: str,
-        listen_ip: str = "0.0.0.0",
-        listen_port: int = 5005,
-        forward_ip: str = "127.0.0.1",
-        forward_port: int = 5006,
-        db: Session = Depends(get_db)
+        name: str, listen_port: int = 5005, forward_ip: str = "127.0.0.1", forward_port: int = 5006,
+        user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    """Создание нового маршрута"""
+    if not name.strip():
+        raise HTTPException(400, "Имя не может быть пустым")
+    if listen_port < 1 or listen_port > 65535 or forward_port < 1 or forward_port > 65535:
+        raise HTTPException(400, "Порт должен быть от 1 до 65535")
 
-    # Валидация
-    if not name or not name.strip():
-        raise HTTPException(400, "Имя маршрута не может быть пустым")
+    import socket
+    test_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        test_sock.bind(('0.0.0.0', listen_port))
+    except OSError:
+        test_sock.close()
+        raise HTTPException(400, f"Порт {listen_port} уже занят")
+    test_sock.close()
 
-    if listen_port < 1 or listen_port > 65535:
-        raise HTTPException(400, "Порт приёма должен быть от 1 до 65535")
+    if db.query(RoutingConfig).filter(RoutingConfig.user_id == user.id, RoutingConfig.name == name).first():
+        raise HTTPException(400, "Маршрут с таким именем уже существует")
 
-    if forward_port < 1 or forward_port > 65535:
-        raise HTTPException(400, "Порт отправки должен быть от 1 до 65535")
-
-    # Проверка уникальности имени
-    existing = db.query(RoutingConfig).filter(RoutingConfig.name == name).first()
-    if existing:
-        raise HTTPException(400, f"Маршрут с именем '{name}' уже существует")
-
-    route = RoutingConfig(
-        name=name.strip(),
-        listen_ip=listen_ip,
-        listen_port=listen_port,
-        forward_ip=forward_ip,
-        forward_port=forward_port
-    )
+    route = RoutingConfig(user_id=user.id, name=name.strip(), listen_port=listen_port,
+                          forward_ip=forward_ip, forward_port=forward_port)
     db.add(route)
     db.commit()
     db.refresh(route)
 
-    log = AuditLog(
-        action="CREATE_ROUTE",
-        details=f"Created '{name}': {listen_ip}:{listen_port} -> {forward_ip}:{forward_port}"
-    )
-    db.add(log)
+    db.add(AuditLog(user_id=user.id, username=user.username, action="CREATE_ROUTE",
+                    details=f"Created '{name}': port {listen_port} -> {forward_ip}:{forward_port}"))
     db.commit()
-
-    logger.info(f"Создан маршрут: {name}")
     return route.to_dict()
 
 
 @app.post("/api/routes/{route_id}/activate")
-def activate_route(route_id: int, db: Session = Depends(get_db)):
+def activate_route(route_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Активация маршрута"""
     route = db.query(RoutingConfig).filter(RoutingConfig.id == route_id).first()
-
     if not route:
-        raise HTTPException(404, "Route not found")
+        raise HTTPException(404, "Маршрут не найден")
+    if user.role != "admin" and route.user_id != user.id:
+        raise HTTPException(403, "Доступ запрещён")
 
-    # Деактивируем все маршруты
-    db.query(RoutingConfig).update({RoutingConfig.is_active: False})
     route.is_active = True
     db.commit()
 
-    log = AuditLog(
+    db.add(AuditLog(
+        user_id=user.id,
+        username=user.username,
         action="ACTIVATE_ROUTE",
-        details=f"Activated '{route.name}': {route.listen_ip}:{route.listen_port} -> {route.forward_ip}:{route.forward_port}"
-    )
-    db.add(log)
+        details=f"Activated '{route.name}'"
+    ))
     db.commit()
 
-    logger.info(f"Активирован маршрут: {route.name}")
     return {"status": "activated", "route": route.to_dict()}
 
 
 @app.delete("/api/routes/{route_id}")
-def delete_route(route_id: int, db: Session = Depends(get_db)):
-    """Удаление маршрута"""
+def delete_route(route_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     route = db.query(RoutingConfig).filter(RoutingConfig.id == route_id).first()
-
     if not route:
-        raise HTTPException(404, "Route not found")
+        raise HTTPException(404, "Маршрут не найден")
+    if user.role != "admin" and route.user_id != user.id:
+        raise HTTPException(403, "Доступ запрещён")
 
     name = route.name
     db.delete(route)
     db.commit()
-
-    log = AuditLog(action="DELETE_ROUTE", details=f"Deleted '{name}'")
-    db.add(log)
+    db.add(AuditLog(user_id=user.id, username=user.username, action="DELETE_ROUTE", details=f"Deleted '{name}'"))
     db.commit()
-
     return {"status": "deleted"}
 
 
-# ==================== API ПРОФИЛЕЙ ПОМЕХ ====================
+# ==================== ПРОФИЛИ ====================
 
 @app.get("/api/profiles")
-def get_profiles(db: Session = Depends(get_db)):
-    return db.query(ImpairmentProfile).all()
+def get_profiles(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role == "admin":
+        return db.query(ImpairmentProfile).all()
+    return db.query(ImpairmentProfile).filter(ImpairmentProfile.user_id == user.id).all()
 
 
 @app.post("/api/profiles")
 def create_profile(
-        name: str,
-        delay: float = 0,
-        loss: float = 0,
-        jitter: float = 0,
-        dup: float = 0,
-        reorder: float = 0,
-        bandwidth: int = 0,
-        db: Session = Depends(get_db)
+        name: str, delay: float = 0, loss: float = 0, jitter: float = 0, dup: float = 0,
+        bandwidth: int = 0, reorder: float = 0,
+        user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    if not name or not name.strip():
-        raise HTTPException(400, "Имя профиля не может быть пустым")
-    if delay < 0:
-        raise HTTPException(400, "Задержка не может быть отрицательной")
-    if loss < 0 or loss > 100:
-        raise HTTPException(400, "Процент потерь должен быть от 0 до 100")
-    if jitter < 0:
-        raise HTTPException(400, "Джиттер не может быть отрицательным")
-    if dup < 0 or dup > 100:
-        raise HTTPException(400, "Процент дублирования должен быть от 0 до 100")
+    if not name.strip():
+        raise HTTPException(400, "Имя не может быть пустым")
+    if delay < 0 or loss < 0 or loss > 100 or jitter < 0 or dup < 0 or dup > 100:
+        raise HTTPException(400, "Некорректные параметры")
+    if bandwidth < 0:
+        raise HTTPException(400, "Пропускная способность не может быть отрицательной")
 
-    existing = db.query(ImpairmentProfile).filter(ImpairmentProfile.name == name).first()
-    if existing:
-        raise HTTPException(400, f"Профиль с именем '{name}' уже существует")
+    if db.query(ImpairmentProfile).filter(ImpairmentProfile.user_id == user.id, ImpairmentProfile.name == name).first():
+        raise HTTPException(400, "Профиль с таким именем уже существует")
 
-    profile = ImpairmentProfile(
-        name=name.strip(),
-        delay_ms=delay,
-        loss_percent=loss,
-        jitter_ms=jitter,
-        duplication_percent=dup,
-        reorder_percent=reorder,
-        bandwidth_kbps=bandwidth
-    )
+    profile = ImpairmentProfile(user_id=user.id, name=name.strip(), delay_ms=delay,
+                                loss_percent=loss, jitter_ms=jitter, duplication_percent=dup,
+                                bandwidth_kbps=bandwidth, reorder_percent=reorder)
     db.add(profile)
     db.commit()
     db.refresh(profile)
 
-    log = AuditLog(
-        action="CREATE_PROFILE",
-        details=f"Created '{name}' (delay={delay}ms, loss={loss}%, jitter={jitter}ms, dup={dup}%)"
-    )
-    db.add(log)
+    db.add(AuditLog(user_id=user.id, username=user.username, action="CREATE_PROFILE",
+                    details=f"Created '{name}' (delay={delay}ms, loss={loss}%, bw={bandwidth}kbps)"))
     db.commit()
-
-    logger.info(f"Создан профиль: {name}")
     return profile
 
 
-@app.post("/api/profiles/{profile_id}/activate")
-def activate_profile(profile_id: int, db: Session = Depends(get_db)):
-    profile = db.query(ImpairmentProfile).filter(ImpairmentProfile.id == profile_id).first()
-
-    if not profile:
-        raise HTTPException(404, "Profile not found")
-
-    db.query(ImpairmentProfile).update({ImpairmentProfile.is_active: False})
-    profile.is_active = True
-    db.commit()
-
-    log = AuditLog(action="ACTIVATE_PROFILE", details=f"Activated '{profile.name}'")
-    db.add(log)
-    db.commit()
-
-    logger.info(f"Активирован профиль: {profile.name}")
-    return {"status": "activated", "profile": profile.name}
-
-
 @app.delete("/api/profiles/{profile_id}")
-def delete_profile(profile_id: int, db: Session = Depends(get_db)):
+def delete_profile(profile_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     profile = db.query(ImpairmentProfile).filter(ImpairmentProfile.id == profile_id).first()
-
     if not profile:
-        raise HTTPException(404, "Profile not found")
+        raise HTTPException(404, "Профиль не найден")
+    if user.role != "admin" and profile.user_id != user.id:
+        raise HTTPException(403, "Доступ запрещён")
 
     name = profile.name
     db.delete(profile)
     db.commit()
-
-    log = AuditLog(action="DELETE_PROFILE", details=f"Deleted '{name}'")
-    db.add(log)
+    db.add(AuditLog(user_id=user.id, username=user.username, action="DELETE_PROFILE", details=f"Deleted '{name}'"))
     db.commit()
-
     return {"status": "deleted"}
 
 
-# ==================== API ДВИЖКА ====================
+# ==================== СЕССИИ ====================
+
+@app.get("/api/sessions")
+def get_sessions(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user.role == "admin":
+        sessions = db.query(SessionModel).order_by(SessionModel.started_at.desc()).limit(50).all()
+    else:
+        sessions = db.query(SessionModel).filter(SessionModel.user_id == user.id).order_by(
+            SessionModel.started_at.desc()).limit(50).all()
+    return [s.to_dict() for s in sessions]
+
+
+# ==================== ДВИЖОК ====================
 
 @app.post("/api/engine/start")
-async def start_engine(request: Request, db: Session = Depends(get_db)):
-    """Запуск движка обработки пакетов"""
-    try:
-        body = await request.json() if await request.body() else {}
-    except Exception:
-        body = {}
+def start_engine(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if packet_engine.running:
+        raise HTTPException(400, "Движок уже запущен")
 
-    nic_in = body.get("nic_in") or request.query_params.get("nic_in")
-    nic_out = body.get("nic_out") or request.query_params.get("nic_out")
+    routes = db.query(RoutingConfig).filter(RoutingConfig.user_id == user.id, RoutingConfig.is_active == True).all()
+    if not routes:
+        raise HTTPException(400, "Нет активных маршрутов. Активируйте хотя бы один маршрут.")
 
-    try:
-        if packet_engine.start(nic_in=nic_in, nic_out=nic_out):
-            # Автоматически активируем первый профиль и маршрут, если есть
-            first_profile = db.query(ImpairmentProfile).first()
-            if first_profile:
-                db.query(ImpairmentProfile).update({ImpairmentProfile.is_active: False})
-                first_profile.is_active = True
+    routes_data = []
+    for route in routes:
+        profile = db.query(ImpairmentProfile).filter(
+            ImpairmentProfile.user_id == user.id, ImpairmentProfile.is_active == True
+        ).first()
 
-            first_route = db.query(RoutingConfig).first()
-            if first_route:
-                db.query(RoutingConfig).update({RoutingConfig.is_active: False})
-                first_route.is_active = True
+        routes_data.append({
+            "route_id": route.id,
+            "route_name": route.name,
+            "listen_port": route.listen_port,
+            "forward_ip": route.forward_ip,
+            "forward_port": route.forward_port,
+            "profile_id": profile.id if profile else None,
+            "profile_name": profile.name if profile else "без профиля"
+        })
 
-            db.commit()
+    success, message = packet_engine.start_routes(routes_data, user.id)
+    if not success:
+        raise HTTPException(400, message)
 
-            log = AuditLog(
-                action="START_ENGINE",
-                details=f"Engine started. Route: {packet_engine.listen_ip}:{packet_engine.listen_port} -> {packet_engine.forward_ip}:{packet_engine.forward_port}"
-            )
-            db.add(log)
-            db.commit()
-
-            logger.info("Движок запущен")
-            return {"status": "started"}
-    except Exception as e:
-        logger.error(f"Ошибка запуска движка: {e}", exc_info=True)
-        raise HTTPException(400, str(e))
-
-    raise HTTPException(400, "Engine already running")
+    db.add(AuditLog(user_id=user.id, username=user.username, action="START_ENGINE", details=message))
+    db.commit()
+    return {"status": "started", "message": message}
 
 
 @app.post("/api/engine/stop")
-def stop_engine(db: Session = Depends(get_db)):
+def stop_engine(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     packet_engine.stop()
-
-    log = AuditLog(action="STOP_ENGINE", details="Engine stopped")
-    db.add(log)
+    db.add(AuditLog(user_id=user.id, username=user.username, action="STOP_ENGINE", details="Engine stopped"))
     db.commit()
-
-    logger.info("Движок остановлен")
     return {"status": "stopped"}
 
 
 @app.get("/api/stats")
-def get_stats():
-    return packet_engine.stats
+def get_stats(user: User = Depends(get_current_user)):
+    return packet_engine.get_aggregated_stats()
 
 
-@app.get("/api/active_profile")
-def get_active_profile(db: Session = Depends(get_db)):
-    profile = db.query(ImpairmentProfile).filter(ImpairmentProfile.is_active == True).first()
-
-    if profile:
-        return {
-            "id": profile.id,
-            "name": profile.name,
-            "delay_ms": profile.delay_ms,
-            "loss_percent": profile.loss_percent,
-            "jitter_ms": profile.jitter_ms,
-            "duplication_percent": profile.duplication_percent
-        }
-    return None
-
-
-@app.get("/api/active_route")
-def get_active_route(db: Session = Depends(get_db)):
-    """Получение активного маршрута"""
-    route = db.query(RoutingConfig).filter(RoutingConfig.is_active == True).first()
-
-    if route:
-        return route.to_dict()
-    return None
+@app.get("/api/sniffer")
+def get_sniffer(user: User = Depends(get_current_user), limit: int = 100):
+    return packet_engine.get_sniffer_events(limit)
 
 
 # ==================== WebSocket ====================
@@ -301,23 +269,17 @@ def get_active_route(db: Session = Depends(get_db)):
 @app.websocket("/ws/stats")
 async def websocket_stats(websocket: WebSocket):
     await websocket.accept()
-    logger.info("WebSocket клиент подключен")
-
     try:
         while True:
             data = {
-                "stats": packet_engine.stats,
+                "stats": packet_engine.get_aggregated_stats(),
                 "engine_running": packet_engine.running,
-                "nic_in": f"{packet_engine.listen_ip}:{packet_engine.listen_port}",
-                "nic_out": f"{packet_engine.forward_ip}:{packet_engine.forward_port}",
-                "active_route": packet_engine.active_route_name
+                "sniffer": packet_engine.get_sniffer_events(20)
             }
             await websocket.send_json(data)
             await asyncio.sleep(1)
     except WebSocketDisconnect:
-        logger.info("WebSocket клиент отключен")
-    except Exception as e:
-        logger.error(f"Ошибка WebSocket: {e}")
+        pass
 
 
 # ==================== Web UI ====================
@@ -329,7 +291,5 @@ async def dashboard(request: Request):
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    logger.info("Остановка сервера...")
     packet_engine.stop()
     await asyncio.sleep(1)
-    logger.info("Сервер остановлен")
