@@ -9,13 +9,12 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class User(Base):
-    """Пользователь системы"""
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    role = Column(String, default="engineer")  # admin, engineer, operator, observer
+    role = Column(String, default="engineer")
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -25,7 +24,6 @@ class User(Base):
 
 
 class RoutingConfig(Base):
-    """Конфигурация маршрута"""
     __tablename__ = "routing_configs"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -41,14 +39,17 @@ class RoutingConfig(Base):
 
     def to_dict(self):
         return {
-            "id": self.id, "user_id": self.user_id, "name": self.name,
-            "listen_port": self.listen_port, "forward_ip": self.forward_ip,
-            "forward_port": self.forward_port, "is_active": self.is_active
+            "id": self.id,
+            "user_id": self.user_id,
+            "name": self.name,
+            "listen_port": self.listen_port,
+            "forward_ip": self.forward_ip,
+            "forward_port": self.forward_port,
+            "is_active": self.is_active
         }
 
 
 class ImpairmentProfile(Base):
-    """Профиль помех"""
     __tablename__ = "profiles"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -67,7 +68,6 @@ class ImpairmentProfile(Base):
 
 
 class Session(Base):
-    """Сессия работы с профилем"""
     __tablename__ = "sessions"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -90,18 +90,21 @@ class Session(Base):
 
     def to_dict(self):
         return {
-            "id": self.id, "user_id": self.user_id,
-            "profile_name": self.profile_name, "route_name": self.route_name,
+            "id": self.id,
+            "user_id": self.user_id,
+            "profile_name": self.profile_name,
+            "route_name": self.route_name,
             "started_at": str(self.started_at) if self.started_at else None,
             "ended_at": str(self.ended_at) if self.ended_at else None,
-            "received": self.received, "forwarded": self.forwarded,
-            "dropped": self.dropped, "duplicated": self.duplicated,
+            "received": self.received,
+            "forwarded": self.forwarded,
+            "dropped": self.dropped,
+            "duplicated": self.duplicated,
             "avg_delay": round(self.avg_delay, 2)
         }
 
 
 class AuditLog(Base):
-    """Журнал аудита"""
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True)

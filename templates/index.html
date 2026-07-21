@@ -16,7 +16,7 @@
                 <input id="auth-username" type="text" placeholder="Логин" autocomplete="username">
                 <input id="auth-password" type="password" placeholder="Пароль" autocomplete="current-password">
                 <button class="btn btn-primary" style="width:100%" onclick="login()">Войти</button>
-                <p style="margin-top:1rem;font-size:0.875rem;color:#9ca3af;text-align:center">
+                <p style="margin-top:1rem;font-size:0.875rem;color:#94a3b8;text-align:center">
                     Нет аккаунта? <a href="#" onclick="showRegister()" style="color:#60a5fa">Зарегистрироваться</a>
                 </p>
             </div>
@@ -262,8 +262,8 @@
                             <li>Восстановления последовательности действий при анализе результатов испытаний</li>
                         </ul>
                         <p style="color: #94a3b8; margin-top: 1rem;">
-                            <em>Примечание: В текущей версии журналы хранятся в базе данных и доступны через API.
-                            Для просмотра используйте endpoint <code>/api/audit-logs</code> или экспорт данных.</em>
+                            <em>Примечание: В текущей версии журналы хранятся в базе данных и доступны через API
+                            <code>/api/audit-logs</code>.</em>
                         </p>
                     </div>
                 </section>
@@ -277,12 +277,10 @@
     </div>
 
     <script>
-        // ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
         let authToken = localStorage.getItem('auth_token');
         let currentUser = null;
         let ws = null;
 
-        // ==================== API ВЫЗОВЫ ====================
         async function apiCall(url, options = {}) {
             if (authToken) {
                 options.headers = options.headers || {};
@@ -300,7 +298,6 @@
             return response.json();
         }
 
-        // ==================== АВТОРИЗАЦИЯ ====================
         async function login() {
             const username = document.getElementById('auth-username').value.trim();
             const password = document.getElementById('auth-password').value;
@@ -361,21 +358,16 @@
             loadSessions();
         }
 
-        // ==================== WEBSOCKET ====================
         function connectWebSocket() {
             if (ws) ws.close();
             const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${location.host}/ws/stats`);
-
             ws.onopen = () => console.log('✅ WebSocket подключен');
-
             ws.onmessage = (e) => {
                 const data = JSON.parse(e.data);
                 updateDashboard(data);
             };
-
-            ws.onerror = (error) => console.error(' WebSocket ошибка:', error);
-
+            ws.onerror = (error) => console.error('❌ WebSocket ошибка:', error);
             ws.onclose = () => {
                 console.log('🔌 WebSocket отключен. Переподключение...');
                 setTimeout(connectWebSocket, 3000);
@@ -430,7 +422,6 @@
             }
         }
 
-        // ==================== УВЕДОМЛЕНИЯ ====================
         function showNotification(message, type = 'info') {
             const notif = document.getElementById('notification');
             document.getElementById('notification-text').innerText = message;
@@ -438,7 +429,6 @@
             setTimeout(() => notif.classList.add('hidden'), 3000);
         }
 
-        // ==================== НАВИГАЦИЯ ====================
         function showSection(sectionName, btn) {
             document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -469,7 +459,7 @@
                 const routes = await apiCall('/api/routes');
                 const list = document.getElementById('routes-list');
                 if (routes.length === 0) {
-                    list.innerHTML = '<p style="color:#9ca3af;font-style:italic">Нет маршрутов</p>';
+                    list.innerHTML = '<p style="color:#94a3b8;font-style:italic">Нет маршрутов</p>';
                     return;
                 }
                 list.innerHTML = routes.map(r => `
@@ -479,8 +469,8 @@
                             <strong>${r.name}</strong><br>
                             <small>Порт ${r.listen_port} → ${r.forward_ip}:${r.forward_port}</small>
                         </div>
-                        <button class="btn btn-warning btn-sm" onclick="activateRoute(${r.id})">
-                            ${r.is_active ? '✓ Активен' : 'Активировать'}
+                        <button class="btn btn-warning btn-sm" onclick="toggleRoute(${r.id}, ${r.is_active})">
+                            ${r.is_active ? '✓ Деактивировать' : 'Активировать'}
                         </button>
                         <button class="btn btn-danger btn-sm" onclick="deleteRoute(${r.id}, '${r.name}')">🗑</button>
                     </div>
@@ -488,10 +478,15 @@
             } catch (e) { showNotification(e.message, 'error'); }
         }
 
-        async function activateRoute(id) {
+        async function toggleRoute(id, isActive) {
             try {
-                await apiCall(`/api/routes/${id}/activate`, {method: 'POST'});
-                showNotification('Маршрут активирован', 'success');
+                if (isActive) {
+                    await apiCall(`/api/routes/${id}/deactivate`, {method: 'POST'});
+                    showNotification('Маршрут деактивирован', 'success');
+                } else {
+                    await apiCall(`/api/routes/${id}/activate`, {method: 'POST'});
+                    showNotification('Маршрут активирован', 'success');
+                }
                 loadRoutes();
             } catch (e) { showNotification(e.message, 'error'); }
         }
@@ -527,7 +522,7 @@
                 const profiles = await apiCall('/api/profiles');
                 const list = document.getElementById('profiles-list');
                 if (profiles.length === 0) {
-                    list.innerHTML = '<p style="color:#9ca3af;font-style:italic">Нет профилей</p>';
+                    list.innerHTML = '<p style="color:#94a3b8;font-style:italic">Нет профилей</p>';
                     return;
                 }
                 list.innerHTML = profiles.map(p => `
@@ -535,10 +530,10 @@
                         <span class="status-dot ${p.is_active ? 'status-active' : 'status-inactive'}"></span>
                         <div class="flex-1">
                             <strong>${p.name}</strong><br>
-                            <small>Delay: ${p.delay_ms}ms | Loss: ${p.loss_percent}% | BW: ${p.bandwidth_kbps || '∞'} Мбит/с</small>
+                            <small>Delay: ${p.delay_ms}ms | Loss: ${p.loss_percent}% | BW: ${p.bandwidth_kbps ? (p.bandwidth_kbps/1000).toFixed(2) : '∞'} Мбит/с</small>
                         </div>
-                        <button class="btn btn-warning btn-sm" onclick="activateProfile(${p.id})">
-                            ${p.is_active ? '✓ Активен' : 'Активировать'}
+                        <button class="btn btn-warning btn-sm" onclick="toggleProfile(${p.id}, ${p.is_active})">
+                            ${p.is_active ? '✓ Деактивировать' : 'Активировать'}
                         </button>
                         <button class="btn btn-danger btn-sm" onclick="deleteProfile(${p.id}, '${p.name}')">🗑</button>
                     </div>
@@ -546,22 +541,15 @@
             } catch (e) { showNotification(e.message, 'error'); }
         }
 
-        async function activateProfile(id) {
+        async function toggleProfile(id, isActive) {
             try {
-                const profiles = await apiCall('/api/profiles');
-                for (const p of profiles) {
-                    if (p.id === id && !p.is_active) {
-                        await apiCall(`/api/profiles/${p.id}/activate`, {method: 'POST'});
-                    } else if (p.is_active && p.id !== id) {
-                        // Деактивируем другие профили
-                        try {
-                            await apiCall(`/api/profiles/${p.id}/deactivate`, {method: 'POST'});
-                        } catch (e) {
-                            console.log('Deactivate endpoint not available, skipping');
-                        }
-                    }
+                if (isActive) {
+                    await apiCall(`/api/profiles/${id}/deactivate`, {method: 'POST'});
+                    showNotification('Профиль деактивирован', 'success');
+                } else {
+                    await apiCall(`/api/profiles/${id}/activate`, {method: 'POST'});
+                    showNotification('Профиль активирован', 'success');
                 }
-                showNotification('Профиль активирован', 'success');
                 loadProfiles();
             } catch (e) { showNotification(e.message, 'error'); }
         }
@@ -575,13 +563,12 @@
             } catch (e) { showNotification(e.message, 'error'); }
         }
 
-        // ==================== СЕССИИ ====================
         async function loadSessions() {
             try {
                 const sessions = await apiCall('/api/sessions');
                 const tbody = document.getElementById('sessions-table');
                 if (sessions.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#9ca3af">Нет сессий</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#94a3b8">Нет сессий</td></tr>';
                     return;
                 }
                 tbody.innerHTML = sessions.map(s => `
@@ -600,7 +587,6 @@
             } catch (e) { console.error(e); }
         }
 
-        // ==================== ДВИЖОК ====================
         async function startEngine() {
             try {
                 await apiCall('/api/engine/start', {method: 'POST'});
@@ -617,7 +603,6 @@
             } catch (e) { showNotification(e.message, 'error'); }
         }
 
-        // ==================== ИНИЦИАЛИЗАЦИЯ ====================
         if (authToken) {
             apiCall('/api/auth/me').then(user => {
                 currentUser = user;

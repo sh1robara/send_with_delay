@@ -14,7 +14,6 @@ security = HTTPBearer()
 
 
 def get_password_hash(password: str) -> str:
-    """Хеширование пароля с использованием bcrypt"""
     pwd_bytes = password.encode('utf-8')
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(pwd_bytes, salt)
@@ -22,14 +21,12 @@ def get_password_hash(password: str) -> str:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Проверка пароля"""
     pwd_bytes = plain_password.encode('utf-8')
     hashed_bytes = hashed_password.encode('utf-8')
     return bcrypt.checkpw(pwd_bytes, hashed_bytes)
 
 
 def create_access_token(data: dict) -> str:
-    """Создание JWT токена"""
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
@@ -40,7 +37,6 @@ def get_current_user(
         credentials: HTTPAuthorizationCredentials = Depends(security),
         db: Session = Depends(get_db)
 ) -> User:
-    """Получение текущего пользователя из токена"""
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
@@ -56,7 +52,6 @@ def get_current_user(
 
 
 def require_admin(user: User = Depends(get_current_user)):
-    """Проверка прав администратора"""
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Требуется доступ администратора")
     return user

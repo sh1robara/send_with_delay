@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import asyncio
 import logging
+import socket as sock_lib
 from datetime import datetime, timezone
 
 from db import get_db, User, RoutingConfig, ImpairmentProfile, Session as SessionModel, AuditLog
@@ -81,8 +82,7 @@ def create_route(
     if listen_port < 1 or listen_port > 65535 or forward_port < 1 or forward_port > 65535:
         raise HTTPException(400, "Порт должен быть от 1 до 65535")
 
-    import socket
-    test_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    test_sock = sock_lib.socket(sock_lib.AF_INET, sock_lib.SOCK_DGRAM)
     try:
         test_sock.bind(('0.0.0.0', listen_port))
     except OSError:
@@ -121,6 +121,24 @@ def activate_route(route_id: int, user: User = Depends(get_current_user), db: Se
     db.commit()
 
     return {"status": "activated", "route": route.to_dict()}
+
+
+@app.post("/api/routes/{route_id}/deactivate")
+def deactivate_route(route_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    route = db.query(RoutingConfig).filter(RoutingConfig.id == route_id).first()
+    if not route:
+        raise HTTPException(404, "Маршрут не найден")
+    if user.role != "admin" and route.user_id != user.id:
+        raise HTTPException(403, "Доступ запрещён")
+
+    route.is_active = False
+    db.commit()
+
+    db.add(AuditLog(user_id=user.id, username=user.username, action="DEACTIVATE_ROUTE",
+                    details=f"Deactivated '{route.name}'"))
+    db.commit()
+
+    return {"status": "deactivated", "route": route.to_dict()}
 
 
 @app.delete("/api/routes/{route_id}")
@@ -164,7 +182,6 @@ def create_profile(
     if db.query(ImpairmentProfile).filter(ImpairmentProfile.user_id == user.id, ImpairmentProfile.name == name).first():
         raise HTTPException(400, "Профиль с таким именем уже существует")
 
-    # bandwidth теперь в Мбит/с, конвертируем в Кбит/с для хранения
     bandwidth_kbps = int(bandwidth * 1000) if bandwidth > 0 else 0
 
     profile = ImpairmentProfile(user_id=user.id, name=name.strip(), delay_ms=delay,
@@ -188,7 +205,6 @@ def activate_profile(profile_id: int, user: User = Depends(get_current_user), db
     if user.role != "admin" and profile.user_id != user.id:
         raise HTTPException(403, "Доступ запрещён")
 
-    # Деактивируем все профили пользователя
     db.query(ImpairmentProfile).filter(ImpairmentProfile.user_id == user.id).update(
         {ImpairmentProfile.is_active: False})
     profile.is_active = True
